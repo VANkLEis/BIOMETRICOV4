@@ -199,3 +199,5 @@ const VideoCall: React.FC = () => {
     </div>
   );
 };
+
+export default VideoCall
