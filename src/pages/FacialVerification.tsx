@@ -58,7 +58,9 @@ const FacialVerification: React.FC = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/png');
+        
+        // Convert the captured image to base64 format for verification
+        return canvas.toDataURL('image/jpeg', 0.8);
       }
     }
     return null;
@@ -76,6 +78,15 @@ const FacialVerification: React.FC = () => {
     
     try {
       const imageData = captureImage();
+      
+      if (!imageData) {
+        throw new Error('Failed to capture facial image');
+      }
+
+      // Simulate sending the image data to a verification service
+      console.log('Sending facial data for verification:', imageData.substring(0, 50) + '...');
+      
+      // Simulate verification process
       await new Promise(resolve => setTimeout(resolve, 2000));
       const isSuccessful = Math.random() > 0.07;
       
