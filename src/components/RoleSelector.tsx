@@ -13,13 +13,14 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ onSelect }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Request media access when component mounts
     const requestMediaAccess = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        stream.getTracks().forEach(track => track.stop()); // Stop tracks after permission check
-        setHasMediaAccess(true);
-        setError(null);
+        const stream = await WebRTCService.getLocalStream();
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          setHasMediaAccess(true);
+          setError(null);
+        }
       } catch (err) {
         console.error('Media access error:', err);
         setError('Please grant camera and microphone permissions to continue');
@@ -37,7 +38,7 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ onSelect }) => {
     }
 
     try {
-      await WebRTCService.initializeDevices();
+      await WebRTCService.getLocalStream();
       setRole(selectedRole);
       onSelect();
     } catch (err) {
