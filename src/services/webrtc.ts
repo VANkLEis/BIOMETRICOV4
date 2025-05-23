@@ -16,20 +16,38 @@ class WebRTCService {
 
   async getLocalStream(): Promise<MediaStream> {
     try {
-      if (this.stream) {
+      if (this.stream && this.stream.active) {
         return this.stream;
       }
 
+      // Stop any existing stream
+      if (this.stream) {
+        this.stream.getTracks().forEach(track => track.stop());
+        this.stream = null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       });
+
+      // Verify stream is valid
+      if (!stream || !stream.active) {
+        throw new Error('Failed to get active media stream');
+      }
 
       this.stream = stream;
       return stream;
     } catch (err) {
       console.error('Error getting local stream:', err);
-      throw new Error('Could not access camera or microphone');
+      throw new Error('Could not access camera or microphone. Please check permissions.');
     }
   }
 
@@ -37,10 +55,28 @@ class WebRTCService {
     try {
       const stream = await this.getLocalStream();
       
+      if (!stream || !stream.active) {
+        throw new Error('No active media stream available');
+      }
+
+      if (this.peer) {
+        this.peer.destroy();
+        this.peer = null;
+      }
+
       this.peer = new SimplePeer({
         initiator: isInitiator,
         stream: stream,
-        trickle: false
+        trickle: false,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+          ]
+        }
       });
 
       this.peer.on('signal', data => {
@@ -49,6 +85,10 @@ class WebRTCService {
       });
 
       this.peer.on('stream', stream => {
+        if (!stream || !stream.active) {
+          console.error('Received invalid remote stream');
+          return;
+        }
         const event = new CustomEvent('remoteStream', { detail: stream });
         window.dispatchEvent(event);
       });
@@ -60,6 +100,12 @@ class WebRTCService {
         });
         window.dispatchEvent(event);
       });
+
+      this.peer.on('close', () => {
+        const event = new CustomEvent('peerClosed');
+        window.dispatchEvent(event);
+      });
+
     } catch (err) {
       console.error('Error initializing peer:', err);
       throw err;
@@ -75,7 +121,9 @@ class WebRTCService {
 
   disconnect() {
     if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+      this.stream.getTracks().forEach(track => {
+        track.stop();
+      });
       this.stream = null;
     }
 
@@ -83,6 +131,10 @@ class WebRTCService {
       this.peer.destroy();
       this.peer = null;
     }
+  }
+
+  isStreamActive(): boolean {
+    return !!(this.stream && this.stream.active);
   }
 }
 
