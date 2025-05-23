@@ -25,6 +25,18 @@ const VideoCall: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
+  // Función para actualizar el stream de video local
+  const updateVideoStream = async (videoRef: React.RefObject<HTMLVideoElement>, stream: MediaStream | null) => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      try {
+        await videoRef.current.play();
+      } catch (err) {
+        console.error('Error playing video:', err);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!role || !roomId || !user) return;
 
@@ -35,16 +47,11 @@ const VideoCall: React.FC = () => {
         await WebRTCService.initialize(isInitiator);
         const stream = await WebRTCService.getLocalStream();
         setLocalStream(stream);
-        
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
+        await updateVideoStream(localVideoRef, stream);
 
-        window.addEventListener('remoteStream', ((event: CustomEvent) => {
+        window.addEventListener('remoteStream', (async (event: CustomEvent) => {
           setRemoteStream(event.detail);
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.detail;
-          }
+          await updateVideoStream(remoteVideoRef, event.detail);
           setConnectionEstablished(true);
           setIsCalling(false);
         }) as EventListener);
@@ -81,6 +88,15 @@ const VideoCall: React.FC = () => {
       window.removeEventListener('peerSignal', () => {});
     };
   }, [role, roomId, user]);
+
+  // Actualizar los streams cuando cambien
+  useEffect(() => {
+    updateVideoStream(localVideoRef, localStream);
+  }, [localStream]);
+
+  useEffect(() => {
+    updateVideoStream(remoteVideoRef, remoteStream);
+  }, [remoteStream]);
 
   const handleSignalInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     try {

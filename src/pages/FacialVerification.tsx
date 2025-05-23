@@ -26,12 +26,18 @@ const FacialVerification: React.FC = () => {
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
       });
       setStream(mediaStream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        // Forzar la reproducción del video
+        await videoRef.current.play();
       }
       
       setError(null);
@@ -131,45 +137,37 @@ const FacialVerification: React.FC = () => {
           )}
           
           <div className="relative rounded-lg overflow-hidden shadow-inner bg-gray-100 aspect-video max-w-lg mx-auto mb-6">
-            {stream ? (
-              <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-                <canvas ref={canvasRef} className="hidden" />
-                
-                {/* Face outline overlay */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="border-4 border-dashed border-blue-400 rounded-full w-64 h-64 flex items-center justify-center">
-                    {countdown !== null && (
-                      <div className="bg-blue-600 text-white text-5xl font-bold rounded-full w-24 h-24 flex items-center justify-center">
-                        {countdown}
-                      </div>
-                    )}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+            <canvas ref={canvasRef} className="hidden" />
+            
+            {/* Face outline overlay */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="border-4 border-dashed border-blue-400 rounded-full w-64 h-64 flex items-center justify-center">
+                {countdown !== null && (
+                  <div className="bg-blue-600 text-white text-5xl font-bold rounded-full w-24 h-24 flex items-center justify-center">
+                    {countdown}
                   </div>
+                )}
+              </div>
+            </div>
+            
+            {success && (
+              <div className="absolute inset-0 bg-green-100 bg-opacity-70 flex items-center justify-center">
+                <div className="bg-white p-4 rounded-full">
+                  <Check className="h-16 w-16 text-green-500" />
                 </div>
-                
-                {success && (
-                  <div className="absolute inset-0 bg-green-100 bg-opacity-70 flex items-center justify-center">
-                    <div className="bg-white p-4 rounded-full">
-                      <Check className="h-16 w-16 text-green-500" />
-                    </div>
-                  </div>
-                )}
-                
-                {verifying && !countdown && (
-                  <div className="absolute inset-0 bg-blue-100 bg-opacity-50 flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600"></div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <p className="text-gray-500">Loading camera...</p>
+              </div>
+            )}
+            
+            {verifying && !countdown && (
+              <div className="absolute inset-0 bg-blue-100 bg-opacity-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600"></div>
               </div>
             )}
           </div>
