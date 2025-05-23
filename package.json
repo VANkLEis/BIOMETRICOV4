@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"peerjs --port 9000 --key peerjs --path /peerjs\" \"vite\"",
+    "dev": "concurrently \"peerjs --port 9000 --key peerjs --path /peerjs --host 0.0.0.0\" \"vite --host\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
