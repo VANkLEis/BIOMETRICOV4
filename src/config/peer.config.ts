@@ -1,5 +1,3 @@
-import { peerConfig, getPeerServerUrl } from '../config/peer.config';
-
 // PeerJS server configuration
 export const peerConfig = {
   // PeerJS server configuration for local network
