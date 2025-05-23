@@ -18,16 +18,27 @@ class WebRTCService {
 
   async initializeDevices(): Promise<void> {
     try {
-      const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
-      if (permissions.state === 'denied') {
-        throw new Error('Camera permission denied. Please enable camera access and refresh the page.');
+      // Check both camera and microphone permissions
+      const [cameraPermission, microphonePermission] = await Promise.all([
+        navigator.permissions.query({ name: 'camera' as PermissionName }),
+        navigator.permissions.query({ name: 'microphone' as PermissionName })
+      ]);
+
+      if (cameraPermission.state === 'denied') {
+        throw new Error('Camera access is blocked. Please enable camera access in your browser settings and refresh the page.');
       }
 
+      if (microphonePermission.state === 'denied') {
+        throw new Error('Microphone access is blocked. Please enable microphone access in your browser settings and refresh the page.');
+      }
+
+      // Stop any existing streams
       if (this.mediaStream) {
         this.mediaStream.getTracks().forEach(track => track.stop());
         this.mediaStream = null;
       }
 
+      // Request media with specific constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -41,37 +52,57 @@ class WebRTCService {
         }
       });
       
+      if (!stream) {
+        throw new Error('Failed to get media stream. Please check your camera and microphone.');
+      }
+
+      // Verify we have both audio and video tracks
+      if (!stream.getVideoTracks().length) {
+        throw new Error('No video track available. Please check your camera connection.');
+      }
+
+      if (!stream.getAudioTracks().length) {
+        throw new Error('No audio track available. Please check your microphone connection.');
+      }
+
       this.mediaStream = stream;
+      
+      // Enumerate available devices
       this.devices = (await navigator.mediaDevices.enumerateDevices())
         .filter(device => device.kind === 'videoinput');
       
       if (this.devices.length === 0) {
-        throw new Error('No video devices found');
+        throw new Error('No video devices found. Please connect a camera and refresh the page.');
       }
 
       this.deviceId = this.devices[0].deviceId;
-      return Promise.resolve();
     } catch (err) {
       console.error('Error initializing devices:', err);
-      throw new Error(err instanceof Error ? err.message : 'Could not access camera or microphone');
+      if (err instanceof Error) {
+        throw new Error(`Device initialization failed: ${err.message}`);
+      } else {
+        throw new Error('Could not access camera or microphone. Please check your device permissions.');
+      }
     }
   }
 
   async initialize(isInitiator: boolean): Promise<void> {
     try {
-      if (!this.devices.length) {
+      if (!this.devices.length || !this.mediaStream) {
         await this.initializeDevices();
+      }
+
+      if (!this.mediaStream) {
+        throw new Error('Failed to initialize media stream');
       }
 
       if (this.peer) {
         this.peer.destroy();
       }
 
-      const stream = await this.getLocalStream();
-      
       this.peer = new SimplePeer({
         initiator: isInitiator,
-        stream: stream,
+        stream: this.mediaStream,
         trickle: true,
         config: {
           iceServers: [
@@ -92,12 +123,18 @@ class WebRTCService {
     if (!this.peer) return;
 
     this.peer.on('signal', data => {
-      // Emit signal data for the application to handle
       const event = new CustomEvent('peerSignal', { detail: data });
       window.dispatchEvent(event);
     });
 
     this.peer.on('stream', stream => {
+      if (!stream) {
+        const event = new CustomEvent('peerError', {
+          detail: { message: 'Remote stream is not available' }
+        });
+        window.dispatchEvent(event);
+        return;
+      }
       const event = new CustomEvent('remoteStream', { detail: stream });
       window.dispatchEvent(event);
     });
@@ -138,7 +175,7 @@ class WebRTCService {
       }
 
       this.deviceId = deviceId;
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      const newStream = await navigator.mediaDevices.getUserMedia({
         video: { 
           deviceId: { exact: deviceId },
           width: { ideal: 1280 },
@@ -147,24 +184,40 @@ class WebRTCService {
         audio: true
       });
 
-      if (this.peer) {
+      if (!newStream) {
+        throw new Error('Failed to get media stream from selected device');
+      }
+
+      this.mediaStream = newStream;
+
+      if (this.peer && this.peer.streams[0]) {
         const videoTrack = this.mediaStream.getVideoTracks()[0];
-        const sender = this.peer.streams[0]?.getVideoTracks()[0];
-        if (sender) {
+        const sender = this.peer.streams[0].getVideoTracks()[0];
+        if (sender && videoTrack) {
           sender.replaceTrack(videoTrack);
         }
       }
     } catch (err) {
       console.error('Error switching device:', err);
-      throw new Error('Failed to switch camera device');
+      throw new Error('Failed to switch camera device. Please check your permissions and try again.');
     }
   }
 
   async getLocalStream(): Promise<MediaStream> {
-    if (!this.mediaStream) {
-      await this.initializeDevices();
+    try {
+      if (!this.mediaStream) {
+        await this.initializeDevices();
+      }
+      
+      if (!this.mediaStream) {
+        throw new Error('Failed to initialize media stream. Please check your camera and microphone permissions.');
+      }
+      
+      return this.mediaStream;
+    } catch (err) {
+      console.error('Error getting local stream:', err);
+      throw err;
     }
-    return this.mediaStream!;
   }
 
   signalPeer(signal: SimplePeer.SignalData) {
