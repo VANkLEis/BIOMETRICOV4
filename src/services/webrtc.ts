@@ -9,7 +9,7 @@ class WebRTCService {
   private deviceId: string | null = null;
   private devices: MediaDeviceInfo[] = [];
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = 10; // Increased from 5 to 10
   private reconnectTimeout: number | null = null;
   private connectionCheckInterval: number | null = null;
   private isReconnecting = false;
@@ -133,7 +133,6 @@ class WebRTCService {
         this.peer.destroy();
       }
 
-      // Clear any existing timeouts and intervals
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = null;
@@ -148,8 +147,9 @@ class WebRTCService {
 
       this.peer = new Peer(userId, {
         ...serverConfig,
-        ...peerConfig.CONFIG,
-        retryTimer: 3000
+        retryTimer: 10000, // Increased from 3000 to 10000
+        debug: 3,
+        secure: true
       });
 
       return new Promise((resolve, reject) => {
@@ -163,7 +163,7 @@ class WebRTCService {
             this.peer?.destroy();
             reject(new Error('Connection timeout. Please check your network connection and try again.'));
           }
-        }, 15000);
+        }, 30000); // Increased from 15000 to 30000
 
         this.peer.on('open', () => {
           console.log('Connected to PeerJS server with ID:', this.peer!.id);
@@ -240,13 +240,11 @@ class WebRTCService {
   }
 
   private handleDisconnection() {
-    // Clear any existing reconnect timeout
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
 
-    // If we're already reconnecting or the peer is not actually disconnected, don't proceed
     if (this.isReconnecting || (this.peer && !this.peer.disconnected)) {
       return;
     }
@@ -262,7 +260,7 @@ class WebRTCService {
 
     this.isReconnecting = true;
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Increased max delay to 30 seconds
 
     this.reconnectTimeout = window.setTimeout(() => {
       if (this.peer && this.peer.disconnected) {
