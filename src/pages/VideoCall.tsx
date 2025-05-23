@@ -32,13 +32,19 @@ const VideoCall: React.FC = () => {
         
         // Get local stream first
         const stream = await WebRTCService.getLocalStream();
+        
+        // Check if stream is valid before proceeding
+        if (!stream) {
+          throw new Error('Failed to access camera and microphone. Please ensure you have granted the necessary permissions.');
+        }
+        
         setLocalStream(stream);
         
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
 
-        // Initialize WebRTC
+        // Initialize WebRTC only if we have a valid stream
         await WebRTCService.initialize(role === 'interviewer');
 
         // Set up event listeners
@@ -65,6 +71,11 @@ const VideoCall: React.FC = () => {
       } catch (err) {
         console.error('Error initializing call:', err);
         setConnectionError(err instanceof Error ? err.message : 'Failed to initialize call');
+        // Clean up any partial initialization
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+          setLocalStream(null);
+        }
       }
     };
 
@@ -72,6 +83,9 @@ const VideoCall: React.FC = () => {
 
     return () => {
       WebRTCService.disconnect();
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
     };
   }, [role, roomId, user, navigate]);
 
