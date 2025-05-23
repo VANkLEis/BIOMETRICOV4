@@ -25,20 +25,6 @@ const VideoCall: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  const setupVideoElement = async (videoRef: React.RefObject<HTMLVideoElement>, stream: MediaStream | null) => {
-    if (!videoRef.current || !stream) {
-      return;
-    }
-
-    try {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-    } catch (err) {
-      console.error('Error playing video:', err);
-      throw new Error('Failed to play video stream');
-    }
-  };
-
   useEffect(() => {
     if (!role || !roomId || !user) return;
 
@@ -46,27 +32,26 @@ const VideoCall: React.FC = () => {
       try {
         setConnectionError(null);
         
-        // Initialize WebRTC with role
         await WebRTCService.initialize(role === 'interviewer');
-        
-        // Get local stream
         const stream = await WebRTCService.getLocalStream();
         
-        // Check if stream is undefined or null
         if (!stream) {
-          throw new Error('Could not access camera or microphone. Please check your device permissions.');
+          throw new Error('Could not access camera or microphone');
         }
 
         setLocalStream(stream);
-        await setupVideoElement(localVideoRef, stream);
+        
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          await localVideoRef.current.play();
+        }
 
-        // Set up event listeners
         const handleRemoteStream = async (event: CustomEvent<MediaStream>) => {
-          if (!event.detail) {
-            throw new Error('Remote stream is unavailable');
-          }
           setRemoteStream(event.detail);
-          await setupVideoElement(remoteVideoRef, event.detail);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.detail;
+            await remoteVideoRef.current.play();
+          }
           setConnectionEstablished(true);
           setIsCalling(false);
         };
@@ -106,9 +91,6 @@ const VideoCall: React.FC = () => {
     initializeCall();
 
     return () => {
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
       WebRTCService.disconnect();
     };
   }, [role, roomId, user, navigate]);
@@ -144,9 +126,6 @@ const VideoCall: React.FC = () => {
   };
 
   const endCall = () => {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-    }
     WebRTCService.disconnect();
     navigate('/dashboard');
   };

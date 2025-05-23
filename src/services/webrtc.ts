@@ -18,7 +18,11 @@ class WebRTCService {
 
   async initializeDevices(): Promise<void> {
     try {
-      // Request permissions first
+      if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach(track => track.stop());
+        this.mediaStream = null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -28,14 +32,7 @@ class WebRTCService {
         audio: true
       });
 
-      // If we got here, permissions were granted
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(track => track.stop());
-      }
-
       this.mediaStream = stream;
-
-      // Now enumerate devices
       const devices = await navigator.mediaDevices.enumerateDevices();
       this.devices = devices.filter(device => device.kind === 'videoinput');
 
@@ -43,48 +40,15 @@ class WebRTCService {
         throw new Error('No video devices found');
       }
 
-      // Set default device
       this.deviceId = this.devices[0].deviceId;
-
-      // Add track ended handlers
-      stream.getTracks().forEach(track => {
-        track.onended = () => {
-          console.log(`${track.kind} track ended`);
-          this.handleTrackEnded(track.kind);
-        };
-      });
-
     } catch (err) {
       console.error('Error initializing devices:', err);
-      throw new Error('Failed to access camera/microphone. Please check your permissions and try again.');
-    }
-  }
-
-  private async handleTrackEnded(kind: string) {
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: kind === 'video',
-        audio: kind === 'audio'
-      });
-
-      if (this.mediaStream) {
-        const oldTrack = this.mediaStream.getTracks().find(t => t.kind === kind);
-        if (oldTrack) {
-          this.mediaStream.removeTrack(oldTrack);
-        }
-        const newTrack = newStream.getTracks().find(t => t.kind === kind);
-        if (newTrack) {
-          this.mediaStream.addTrack(newTrack);
-        }
-      }
-    } catch (err) {
-      console.error(`Failed to recover ${kind} track:`, err);
+      throw new Error('Failed to access camera/microphone');
     }
   }
 
   async initialize(isInitiator: boolean): Promise<void> {
     try {
-      // Ensure we have devices initialized
       if (!this.mediaStream) {
         await this.initializeDevices();
       }
@@ -93,13 +57,11 @@ class WebRTCService {
         throw new Error('Failed to initialize media stream');
       }
 
-      // Clean up any existing peer
       if (this.peer) {
         this.peer.destroy();
         this.peer = null;
       }
 
-      // Create new peer
       this.peer = new SimplePeer({
         initiator: isInitiator,
         stream: this.mediaStream,
@@ -109,8 +71,7 @@ class WebRTCService {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' }
+            { urls: 'stun:stun3.l.google.com:19302' }
           ]
         }
       });
@@ -168,7 +129,6 @@ class WebRTCService {
       });
 
       if (this.mediaStream) {
-        // Replace video track
         const oldVideoTrack = this.mediaStream.getVideoTracks()[0];
         const newVideoTrack = newStream.getVideoTracks()[0];
         
@@ -181,11 +141,10 @@ class WebRTCService {
           this.mediaStream.addTrack(newVideoTrack);
         }
 
-        // Update peer connection if exists
-        if (this.peer && this.peer.streams[0]) {
-          const sender = this.peer.streams[0].getVideoTracks()[0];
-          if (sender && newVideoTrack) {
-            sender.replaceTrack(newVideoTrack);
+        if (this.peer) {
+          const senders = this.peer.streams[0].getVideoTracks();
+          if (senders.length > 0 && newVideoTrack) {
+            senders[0].replaceTrack(newVideoTrack);
           }
         }
       } else {
