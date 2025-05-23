@@ -1,106 +1,84 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useRole } from '../contexts/RoleContext';
-import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Users } from 'lucide-react';
-import RoleSelector from '../components/RoleSelector';
-import WebRTCService from '../services/webrtc';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone } from 'lucide-react';
+import DeviceSelector from '../components/DeviceSelector';
 
 const VideoCall: React.FC = () => {
-  const { roomId } = useParams<{ roomId: string }>();
-  const { user } = useAuth();
-  const { role } = useRole();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [primaryStream, setPrimaryStream] = useState<MediaStream | null>(null);
+  const [secondaryStream, setSecondaryStream] = useState<MediaStream | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [showRoleSelector, setShowRoleSelector] = useState(true);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [signalData, setSignalData] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
   
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const primaryVideoRef = useRef<HTMLVideoElement>(null);
+  const secondaryVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (!role || !roomId || !user) return;
-
-    const initializeCall = async () => {
-      try {
-        setConnectionError(null);
-        
-        // Get local stream first
-        const stream = await WebRTCService.getLocalStream();
-        
-        // Check if stream is valid before proceeding
-        if (!stream) {
-          throw new Error('Failed to access camera and microphone. Please ensure you have granted the necessary permissions.');
-        }
-        
-        setLocalStream(stream);
-        
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        // Initialize WebRTC only if we have a valid stream
-        await WebRTCService.initialize(role === 'interviewer');
-
-        // Set up event listeners
-        const handleRemoteStream = (event: CustomEvent<MediaStream>) => {
-          const stream = event.detail;
-          setRemoteStream(stream);
-          
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = stream;
-          }
-        };
-
-        const handlePeerSignal = (event: CustomEvent) => {
-          setSignalData(JSON.stringify(event.detail));
-        };
-
-        window.addEventListener('remoteStream', handleRemoteStream as EventListener);
-        window.addEventListener('peerSignal', handlePeerSignal as EventListener);
-
-        return () => {
-          window.removeEventListener('remoteStream', handleRemoteStream as EventListener);
-          window.removeEventListener('peerSignal', handlePeerSignal as EventListener);
-        };
-      } catch (err) {
-        console.error('Error initializing call:', err);
-        setConnectionError(err instanceof Error ? err.message : 'Failed to initialize call');
-        // Clean up any partial initialization
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-          setLocalStream(null);
-        }
-      }
-    };
-
-    initializeCall();
-
+    initializePrimaryCamera();
     return () => {
-      WebRTCService.disconnect();
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      if (primaryStream) {
+        primaryStream.getTracks().forEach(track => track.stop());
+      }
+      if (secondaryStream) {
+        secondaryStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [role, roomId, user, navigate]);
+  }, []);
 
-  const handleSignalInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const initializePrimaryCamera = async () => {
     try {
-      const signal = JSON.parse(event.target.value);
-      WebRTCService.signalPeer(signal);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        },
+        audio: true
+      });
+      
+      setPrimaryStream(stream);
+      if (primaryVideoRef.current) {
+        primaryVideoRef.current.srcObject = stream;
+      }
     } catch (err) {
-      console.error('Invalid signal data:', err);
+      console.error('Error accessing primary camera:', err);
+      setError('Failed to access primary camera');
+    }
+  };
+
+  const handleSecondaryDeviceSelect = async (deviceId: string) => {
+    try {
+      // Stop previous secondary stream if it exists
+      if (secondaryStream) {
+        secondaryStream.getTracks().forEach(track => track.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }
+      });
+      
+      setSecondaryStream(stream);
+      if (secondaryVideoRef.current) {
+        secondaryVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Error accessing secondary camera:', err);
+      setError('Failed to access secondary camera');
     }
   };
 
   const toggleAudio = () => {
-    if (localStream) {
-      const audioTracks = localStream.getAudioTracks();
+    if (primaryStream) {
+      const audioTracks = primaryStream.getAudioTracks();
       audioTracks.forEach(track => {
         track.enabled = !track.enabled;
       });
@@ -109,8 +87,8 @@ const VideoCall: React.FC = () => {
   };
 
   const toggleVideo = () => {
-    if (localStream) {
-      const videoTracks = localStream.getVideoTracks();
+    if (primaryStream) {
+      const videoTracks = primaryStream.getVideoTracks();
       videoTracks.forEach(track => {
         track.enabled = !track.enabled;
       });
@@ -119,24 +97,21 @@ const VideoCall: React.FC = () => {
   };
 
   const endCall = () => {
-    WebRTCService.disconnect();
+    if (primaryStream) {
+      primaryStream.getTracks().forEach(track => track.stop());
+    }
+    if (secondaryStream) {
+      secondaryStream.getTracks().forEach(track => track.stop());
+    }
     navigate('/dashboard');
   };
 
-  const handleRoleSelected = () => {
-    setShowRoleSelector(false);
-  };
-
-  if (showRoleSelector) {
-    return <RoleSelector onSelect={handleRoleSelected} />;
-  }
-
   return (
     <div className="flex flex-col h-screen bg-gray-900">
-      {connectionError && (
+      {error && (
         <div className="absolute inset-x-0 top-4 flex justify-center z-50">
           <div className="bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg">
-            {connectionError}
+            {error}
           </div>
         </div>
       )}
@@ -144,10 +119,9 @@ const VideoCall: React.FC = () => {
       <div className="flex flex-1">
         <div className="w-1/2 relative bg-black border-r border-gray-800">
           <video
-            ref={localVideoRef}
+            ref={primaryVideoRef}
             autoPlay
             playsInline
-            muted
             className="w-full h-full object-cover"
           />
           {isVideoOff && (
@@ -158,32 +132,16 @@ const VideoCall: React.FC = () => {
         </div>
 
         <div className="w-1/2 relative bg-black">
-          {remoteStream ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <Users className="h-24 w-24 text-gray-500 opacity-50 mb-4" />
-              <div className="bg-gray-800 p-4 rounded-lg max-w-md w-full">
-                <p className="text-white text-center mb-2">Share this connection data with the other participant:</p>
-                <textarea
-                  readOnly
-                  className="w-full h-32 bg-gray-700 text-white rounded p-2 mb-2"
-                  value={signalData}
-                />
-                <p className="text-white text-center mb-2">Paste their connection data here:</p>
-                <textarea
-                  className="w-full h-32 bg-gray-700 text-white rounded p-2"
-                  onChange={handleSignalInput}
-                  placeholder="Paste connection data here..."
-                />
-              </div>
-            </div>
-          )}
+          <video
+            ref={secondaryVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute top-4 right-4 z-10">
+            <DeviceSelector onDeviceSelect={handleSecondaryDeviceSelect} />
+          </div>
         </div>
       </div>
 

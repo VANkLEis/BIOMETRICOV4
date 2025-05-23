@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Camera } from 'lucide-react';
-import WebRTCService from '../services/webrtc';
 
 interface DeviceSelectorProps {
   onDeviceSelect: (deviceId: string) => void;
@@ -17,14 +16,17 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({ onDeviceSelect }) => {
       try {
         setLoading(true);
         setError(null);
-        const availableDevices = await WebRTCService.getAvailableDevices();
-        setDevices(availableDevices);
         
-        if (availableDevices.length > 0) {
-          // Try to find DroidCam if available
-          const droidcam = availableDevices.find(d => d.label.toLowerCase().includes('droidcam'));
-          const deviceId = droidcam?.deviceId || availableDevices[0].deviceId;
-          
+        // Request permission to access devices
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = allDevices.filter(device => device.kind === 'videoinput');
+        
+        setDevices(videoDevices);
+        
+        if (videoDevices.length > 0) {
+          const deviceId = videoDevices[0].deviceId;
           setSelectedDevice(deviceId);
           onDeviceSelect(deviceId);
         }
@@ -38,24 +40,16 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({ onDeviceSelect }) => {
 
     loadDevices();
     
-    // Listen for device changes
     navigator.mediaDevices.addEventListener('devicechange', loadDevices);
-    
     return () => {
       navigator.mediaDevices.removeEventListener('devicechange', loadDevices);
     };
   }, [onDeviceSelect]);
 
-  const handleDeviceChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleDeviceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const deviceId = event.target.value;
-    try {
-      setSelectedDevice(deviceId);
-      await WebRTCService.setVideoDevice(deviceId);
-      onDeviceSelect(deviceId);
-    } catch (err) {
-      console.error('Error switching device:', err);
-      setError('Failed to switch camera');
-    }
+    setSelectedDevice(deviceId);
+    onDeviceSelect(deviceId);
   };
 
   if (loading) {
