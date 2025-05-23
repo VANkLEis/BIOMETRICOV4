@@ -9,9 +9,10 @@ class WebRTCService {
   private deviceId: string | null = null;
   private devices: MediaDeviceInfo[] = [];
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
+  private maxReconnectAttempts = 5;
   private reconnectTimeout: number | null = null;
   private connectionCheckInterval: number | null = null;
+  private isReconnecting = false;
 
   private constructor() {}
 
@@ -57,12 +58,13 @@ class WebRTCService {
 
       this.deviceId = this.devices[0].deviceId;
 
-      // Monitor track states
       stream.getTracks().forEach(track => {
         track.onended = () => this.handleTrackEnded(track);
         track.onmute = () => this.handleTrackMuted(track);
         track.onunmute = () => this.handleTrackUnmuted(track);
       });
+
+      return Promise.resolve();
     } catch (err) {
       console.error('Error initializing devices:', err);
       throw new Error(err instanceof Error ? err.message : 'Could not access camera or microphone');
@@ -109,7 +111,6 @@ class WebRTCService {
           console.log(`Successfully replaced ${kind} track`);
         }
 
-        // Update mediaStream
         const oldTrack = this.mediaStream.getTracks().find(t => t.kind === kind);
         if (oldTrack) {
           oldTrack.stop();
@@ -128,10 +129,17 @@ class WebRTCService {
         await this.initializeDevices();
       }
 
+      if (this.peer) {
+        this.peer.destroy();
+      }
+
       const serverConfig = getPeerServerUrl();
+      console.log('Connecting to PeerJS server with config:', serverConfig);
+
       this.peer = new Peer(userId, {
         ...serverConfig,
-        ...peerConfig.CONFIG
+        ...peerConfig.CONFIG,
+        retryTimer: 3000 // Add retry timer for connection attempts
       });
 
       return new Promise((resolve, reject) => {
@@ -140,10 +148,19 @@ class WebRTCService {
           return;
         }
 
+        const timeout = setTimeout(() => {
+          if (!this.peer?.connected) {
+            this.peer?.destroy();
+            reject(new Error('Connection timeout. Please check your network connection and try again.'));
+          }
+        }, 15000);
+
         this.peer.on('open', () => {
           console.log('Connected to PeerJS server with ID:', this.peer!.id);
+          clearTimeout(timeout);
           this.startConnectionCheck();
           this.reconnectAttempts = 0;
+          this.isReconnecting = false;
           resolve();
         });
 
@@ -156,18 +173,27 @@ class WebRTCService {
           console.error('PeerJS error:', err);
           if (err.type === 'network' || err.type === 'server-error') {
             this.handleDisconnection();
+          } else if (err.type === 'unavailable-id') {
+            // Handle case where user ID is already taken
+            reject(new Error('User ID is already in use. Please try again with a different ID.'));
+          } else if (err.type === 'invalid-id') {
+            reject(new Error('Invalid user ID format. Please use only alphanumeric characters.'));
+          } else {
+            if (!this.isReconnecting) {
+              reject(new Error('Connection failed. Please check your network connection and try again.'));
+            }
           }
-          reject(err);
         });
 
         this.peer.on('call', async (call) => {
           try {
+            console.log('Receiving call from:', call.peer);
             const stream = await this.getLocalStream();
             call.answer(stream);
             this.handleCall(call);
           } catch (err) {
             console.error('Error answering call:', err);
-            reject(err);
+            reject(new Error('Failed to answer call. Please check your camera and microphone permissions.'));
           }
         });
       });
@@ -201,23 +227,28 @@ class WebRTCService {
   }
 
   private handleDisconnection() {
+    if (this.isReconnecting) return;
+    
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.isReconnecting = false;
       const event = new CustomEvent('peerError', {
-        detail: { message: 'Connection lost. Maximum reconnection attempts reached.' }
+        detail: { message: 'Connection lost. Maximum reconnection attempts reached. Please refresh the page to try again.' }
       });
       window.dispatchEvent(event);
       return;
     }
 
+    this.isReconnecting = true;
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 5000);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
 
     if (this.reconnectTimeout) {
-      window.clearTimeout(this.reconnectTimeout);
+      clearTimeout(this.reconnectTimeout);
     }
 
     this.reconnectTimeout = window.setTimeout(() => {
       if (this.peer) {
+        console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts} of ${this.maxReconnectAttempts})...`);
         this.peer.reconnect();
       }
     }, delay);
@@ -304,16 +335,17 @@ class WebRTCService {
 
   async makeCall(remotePeerId: string): Promise<void> {
     if (!this.peer || this.peer.disconnected) {
-      throw new Error('Not connected to server. Please wait for reconnection.');
+      throw new Error('Not connected to server. Please wait for reconnection or refresh the page.');
     }
 
     try {
+      console.log('Making call to:', remotePeerId);
       const stream = await this.getLocalStream();
       const call = this.peer.call(remotePeerId, stream);
       this.handleCall(call);
     } catch (err) {
       console.error('Error making call:', err);
-      throw err;
+      throw new Error('Failed to make call. Please check your camera and microphone permissions.');
     }
   }
 
@@ -321,11 +353,13 @@ class WebRTCService {
     this.currentCall = call;
 
     call.on('stream', (remoteStream: MediaStream) => {
+      console.log('Received remote stream');
       const event = new CustomEvent('remoteStream', { detail: remoteStream });
       window.dispatchEvent(event);
     });
 
     call.on('close', () => {
+      console.log('Call ended');
       this.currentCall = null;
       const event = new CustomEvent('callEnded');
       window.dispatchEvent(event);
@@ -335,7 +369,7 @@ class WebRTCService {
       console.error('Call error:', err);
       this.currentCall = null;
       const event = new CustomEvent('peerError', {
-        detail: { message: 'Call connection error. Please try again.' }
+        detail: { message: 'Call connection error. Please check your network connection and try again.' }
       });
       window.dispatchEvent(event);
     });
@@ -368,6 +402,7 @@ class WebRTCService {
     }
 
     this.reconnectAttempts = 0;
+    this.isReconnecting = false;
   }
 
   getPeerId(): string | null {

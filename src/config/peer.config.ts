@@ -1,17 +1,18 @@
 // PeerJS server configuration
 export const peerConfig = {
-  // Local PeerJS server configuration
-  SERVER_URL: 'localhost',
-  SERVER_PORT: 9000,
-  SERVER_PATH: '/peerjs',
+  // PeerJS server configuration for WebContainer environment
+  SERVER_URL: '0.peerjs.com', // Using PeerJS public server as fallback
+  SERVER_PORT: 443, // HTTPS port
+  SERVER_PATH: '/', // Root path for public server
   
-  // Basic PeerJS configuration for local development
+  // PeerJS configuration with secure connection
   CONFIG: {
     debug: 3,
-    secure: false,
+    secure: true,
     config: {
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' }
       ]
     }
   }
@@ -24,6 +25,6 @@ export const getPeerServerUrl = () => {
     host: SERVER_URL,
     port: SERVER_PORT,
     path: SERVER_PATH,
-    secure: false
+    secure: true // Enable secure connection
   };
 };
