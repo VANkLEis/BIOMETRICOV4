@@ -26,7 +26,8 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({ onDeviceSelect }) => {
         setDevices(videoDevices);
         
         if (videoDevices.length > 0) {
-          const deviceId = videoDevices[0].deviceId;
+          // Select the second camera by default if available, otherwise use the first one
+          const deviceId = videoDevices.length > 1 ? videoDevices[1].deviceId : videoDevices[0].deviceId;
           setSelectedDevice(deviceId);
           onDeviceSelect(deviceId);
         }

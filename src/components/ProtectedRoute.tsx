@@ -1,19 +1,13 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useVerification } from '../contexts/VerificationContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requireVerification?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
-  children, 
-  requireVerification = false 
-}) => {
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  const { isFullyVerified } = useVerification();
 
   if (loading) {
     return (
@@ -25,10 +19,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   if (!isAuthenticated) {
     return <Navigate to="/" replace />;
-  }
-
-  if (requireVerification && !isFullyVerified) {
-    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

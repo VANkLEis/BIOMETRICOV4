@@ -1,12 +1,10 @@
 import React from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useVerification } from '../contexts/VerificationContext';
-import { Video, User, LogOut, Fingerprint, Check, X } from 'lucide-react';
+import { Video, User, LogOut } from 'lucide-react';
 
 const Layout: React.FC = () => {
   const { user, logout } = useAuth();
-  const { verification } = useVerification();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -16,7 +14,6 @@ const Layout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
@@ -27,16 +24,6 @@ const Layout: React.FC = () => {
               </Link>
             </div>
             <div className="flex items-center">
-              <div className="flex space-x-4 mr-4">
-                <div className="flex items-center">
-                  <div className={`w-3 h-3 rounded-full mr-1 ${verification.faceVerified ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <span className="text-sm text-gray-600">Face</span>
-                </div>
-                <div className="flex items-center">
-                  <div className={`w-3 h-3 rounded-full mr-1 ${verification.fingerprintVerified ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <span className="text-sm text-gray-600">Fingerprint</span>
-                </div>
-              </div>
               <div className="relative group">
                 <button className="flex items-center text-gray-700 hover:text-gray-900">
                   <div className="h-8 w-8 rounded-full bg-blue-200 flex items-center justify-center">
@@ -59,7 +46,6 @@ const Layout: React.FC = () => {
         </div>
       </header>
 
-      {/* Main content */}
       <main>
         <Outlet />
       </main>
