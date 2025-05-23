@@ -4,14 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"peerjs --port 9000 --key peerjs --path /peerjs --host 0.0.0.0\" \"vite --host\"",
+    "dev": "vite --host",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "peer-server": "peerjs --port 9000 --key peerjs --path /peerjs"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "concurrently": "^8.2.2",
     "lucide-react": "^0.344.0",
     "peerjs": "^1.5.2",
     "react": "^18.3.1",

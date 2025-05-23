@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
-import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Users, MessageSquare } from 'lucide-react';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Users } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
 import WebRTCService from '../services/webrtc';
 
@@ -20,10 +20,10 @@ const VideoCall: React.FC = () => {
   const [connectionEstablished, setConnectionEstablished] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [signalData, setSignalData] = useState<string>('');
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const reconnectTimeoutRef = useRef<number>();
 
   useEffect(() => {
     if (!role || !roomId || !user) return;
@@ -31,7 +31,8 @@ const VideoCall: React.FC = () => {
     const initializeWebRTC = async () => {
       try {
         setConnectionError(null);
-        await WebRTCService.initialize(user.id.toString());
+        const isInitiator = role === 'interviewer';
+        await WebRTCService.initialize(isInitiator);
         const stream = await WebRTCService.getLocalStream();
         setLocalStream(stream);
         
@@ -58,14 +59,14 @@ const VideoCall: React.FC = () => {
           setIsCalling(false);
         }) as EventListener);
 
-        if (role === 'interviewer') {
-          setIsCalling(true);
-        } else {
-          await WebRTCService.makeCall(roomId);
-        }
+        window.addEventListener('peerSignal', ((event: CustomEvent) => {
+          const signal = JSON.stringify(event.detail);
+          setSignalData(signal);
+        }) as EventListener);
+
       } catch (err) {
         console.error('Error initializing WebRTC:', err);
-        setConnectionError('Failed to connect. Please try again.');
+        setConnectionError('Failed to connect. Please check your camera and microphone permissions.');
         setIsCalling(false);
       }
     };
@@ -77,11 +78,18 @@ const VideoCall: React.FC = () => {
       window.removeEventListener('remoteStream', () => {});
       window.removeEventListener('callEnded', () => {});
       window.removeEventListener('peerError', () => {});
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      window.removeEventListener('peerSignal', () => {});
     };
   }, [role, roomId, user]);
+
+  const handleSignalInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    try {
+      const signal = JSON.parse(event.target.value);
+      WebRTCService.signalPeer(signal);
+    } catch (err) {
+      console.error('Invalid signal data');
+    }
+  };
 
   const toggleAudio = () => {
     if (localStream) {
@@ -124,16 +132,6 @@ const VideoCall: React.FC = () => {
         </div>
       )}
 
-      {isCalling && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-90">
-          <div className="text-center text-white">
-            <div className="animate-ping inline-flex h-24 w-24 rounded-full bg-blue-400 opacity-75 mb-4"></div>
-            <h2 className="text-2xl font-semibold mb-2">Connecting to call...</h2>
-            <p className="text-gray-300">Room ID: {roomId}</p>
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-1">
         <div className="w-1/2 relative bg-black border-r border-gray-800">
           <video
@@ -159,8 +157,22 @@ const VideoCall: React.FC = () => {
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Users className="h-24 w-24 text-gray-500 opacity-50" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <Users className="h-24 w-24 text-gray-500 opacity-50 mb-4" />
+              <div className="bg-gray-800 p-4 rounded-lg max-w-md w-full">
+                <p className="text-white text-center mb-2">Share this connection data with the other participant:</p>
+                <textarea
+                  readOnly
+                  className="w-full h-32 bg-gray-700 text-white rounded p-2 mb-2"
+                  value={signalData}
+                />
+                <p className="text-white text-center mb-2">Paste their connection data here:</p>
+                <textarea
+                  className="w-full h-32 bg-gray-700 text-white rounded p-2"
+                  onChange={handleSignalInput}
+                  placeholder="Paste connection data here..."
+                />
+              </div>
             </div>
           )}
         </div>
@@ -200,4 +212,4 @@ const VideoCall: React.FC = () => {
   );
 };
 
-export default VideoCall
+export default VideoCall;

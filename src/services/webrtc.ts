@@ -1,18 +1,11 @@
-import { Peer, MediaConnection } from 'peerjs';
-import { peerConfig, getPeerServerUrl } from '../config/peer.config';
+import SimplePeer from 'simple-peer';
 
 class WebRTCService {
   private static instance: WebRTCService;
-  private peer: Peer | null = null;
+  private peer: SimplePeer.Instance | null = null;
   private mediaStream: MediaStream | null = null;
-  private currentCall: MediaConnection | null = null;
   private deviceId: string | null = null;
   private devices: MediaDeviceInfo[] = [];
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10; // Increased from 5 to 10
-  private reconnectTimeout: number | null = null;
-  private connectionCheckInterval: number | null = null;
-  private isReconnecting = false;
 
   private constructor() {}
 
@@ -57,13 +50,6 @@ class WebRTCService {
       }
 
       this.deviceId = this.devices[0].deviceId;
-
-      stream.getTracks().forEach(track => {
-        track.onended = () => this.handleTrackEnded(track);
-        track.onmute = () => this.handleTrackMuted(track);
-        track.onunmute = () => this.handleTrackUnmuted(track);
-      });
-
       return Promise.resolve();
     } catch (err) {
       console.error('Error initializing devices:', err);
@@ -71,59 +57,7 @@ class WebRTCService {
     }
   }
 
-  private handleTrackEnded(track: MediaStreamTrack) {
-    console.log(`Track ${track.kind} ended, attempting to restart...`);
-    this.restartTrack(track.kind);
-  }
-
-  private handleTrackMuted(track: MediaStreamTrack) {
-    console.log(`Track ${track.kind} muted, attempting to unmute...`);
-    track.enabled = true;
-  }
-
-  private handleTrackUnmuted(track: MediaStreamTrack) {
-    console.log(`Track ${track.kind} unmuted`);
-  }
-
-  private async restartTrack(kind: string) {
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: kind === 'video' ? {
-          deviceId: this.deviceId ? { exact: this.deviceId } : undefined,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 }
-        } : false,
-        audio: kind === 'audio' ? {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } : false
-      });
-
-      if (this.mediaStream && this.currentCall?.peerConnection) {
-        const newTrack = newStream.getTracks()[0];
-        const sender = this.currentCall.peerConnection.getSenders()
-          .find(s => s.track?.kind === kind);
-        
-        if (sender) {
-          await sender.replaceTrack(newTrack);
-          console.log(`Successfully replaced ${kind} track`);
-        }
-
-        const oldTrack = this.mediaStream.getTracks().find(t => t.kind === kind);
-        if (oldTrack) {
-          oldTrack.stop();
-          this.mediaStream.removeTrack(oldTrack);
-          this.mediaStream.addTrack(newTrack);
-        }
-      }
-    } catch (err) {
-      console.error(`Error restarting ${kind} track:`, err);
-    }
-  }
-
-  async initialize(userId: string): Promise<void> {
+  async initialize(isInitiator: boolean): Promise<void> {
     try {
       if (!this.devices.length) {
         await this.initializeDevices();
@@ -133,143 +67,53 @@ class WebRTCService {
         this.peer.destroy();
       }
 
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = null;
-      }
-      if (this.connectionCheckInterval) {
-        clearInterval(this.connectionCheckInterval);
-        this.connectionCheckInterval = null;
-      }
-
-      const serverConfig = getPeerServerUrl();
-      console.log('Connecting to PeerJS server with config:', serverConfig);
-
-      this.peer = new Peer(userId, {
-        ...serverConfig,
-        retryTimer: 10000, // Increased from 3000 to 10000
-        debug: 3,
-        secure: true
-      });
-
-      return new Promise((resolve, reject) => {
-        if (!this.peer) {
-          reject(new Error('Failed to create peer'));
-          return;
+      const stream = await this.getLocalStream();
+      
+      this.peer = new SimplePeer({
+        initiator: isInitiator,
+        stream: stream,
+        trickle: true,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
         }
-
-        const timeout = setTimeout(() => {
-          if (!this.peer?.connected) {
-            this.peer?.destroy();
-            reject(new Error('Connection timeout. Please check your network connection and try again.'));
-          }
-        }, 30000); // Increased from 15000 to 30000
-
-        this.peer.on('open', () => {
-          console.log('Connected to PeerJS server with ID:', this.peer!.id);
-          clearTimeout(timeout);
-          this.startConnectionCheck();
-          this.reconnectAttempts = 0;
-          this.isReconnecting = false;
-          resolve();
-        });
-
-        this.peer.on('disconnected', () => {
-          console.log('Disconnected from server, attempting to reconnect...');
-          if (!this.isReconnecting) {
-            this.handleDisconnection();
-          }
-        });
-
-        this.peer.on('error', (err) => {
-          console.error('PeerJS error:', err);
-          if (err.type === 'network' || err.type === 'server-error') {
-            if (!this.isReconnecting) {
-              this.handleDisconnection();
-            }
-          } else if (err.type === 'unavailable-id') {
-            reject(new Error('User ID is already in use. Please try again with a different ID.'));
-          } else if (err.type === 'invalid-id') {
-            reject(new Error('Invalid user ID format. Please use only alphanumeric characters.'));
-          } else {
-            if (!this.isReconnecting) {
-              reject(new Error('Connection failed. Please check your network connection and try again.'));
-            }
-          }
-        });
-
-        this.peer.on('call', async (call) => {
-          try {
-            console.log('Receiving call from:', call.peer);
-            const stream = await this.getLocalStream();
-            call.answer(stream);
-            this.handleCall(call);
-          } catch (err) {
-            console.error('Error answering call:', err);
-            reject(new Error('Failed to answer call. Please check your camera and microphone permissions.'));
-          }
-        });
       });
+
+      this.setupPeerEvents();
     } catch (err) {
       console.error('Error in initialize:', err);
       throw err;
     }
   }
 
-  private startConnectionCheck() {
-    if (this.connectionCheckInterval) {
-      clearInterval(this.connectionCheckInterval);
-    }
+  private setupPeerEvents() {
+    if (!this.peer) return;
 
-    this.connectionCheckInterval = window.setInterval(() => {
-      if (this.currentCall?.peerConnection) {
-        const pc = this.currentCall.peerConnection;
-        pc.getStats().then(stats => {
-          stats.forEach(report => {
-            if (report.type === 'media-source' || report.type === 'track') {
-              if (report.kind === 'video' || report.kind === 'audio') {
-                if (report.ended || report.muted) {
-                  this.restartTrack(report.kind);
-                }
-              }
-            }
-          });
-        });
-      }
-    }, 2000);
-  }
+    this.peer.on('signal', data => {
+      // Emit signal data for the application to handle
+      const event = new CustomEvent('peerSignal', { detail: data });
+      window.dispatchEvent(event);
+    });
 
-  private handleDisconnection() {
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
+    this.peer.on('stream', stream => {
+      const event = new CustomEvent('remoteStream', { detail: stream });
+      window.dispatchEvent(event);
+    });
 
-    if (this.isReconnecting || (this.peer && !this.peer.disconnected)) {
-      return;
-    }
-    
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.isReconnecting = false;
+    this.peer.on('error', err => {
+      console.error('Peer error:', err);
       const event = new CustomEvent('peerError', {
-        detail: { message: 'Connection lost. Maximum reconnection attempts reached. Please refresh the page to try again.' }
+        detail: { message: 'Connection error occurred. Please try again.' }
       });
       window.dispatchEvent(event);
-      return;
-    }
+    });
 
-    this.isReconnecting = true;
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Increased max delay to 30 seconds
-
-    this.reconnectTimeout = window.setTimeout(() => {
-      if (this.peer && this.peer.disconnected) {
-        console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts} of ${this.maxReconnectAttempts})...`);
-        this.peer.reconnect();
-      } else {
-        this.isReconnecting = false;
-      }
-    }, delay);
+    this.peer.on('close', () => {
+      const event = new CustomEvent('callEnded');
+      window.dispatchEvent(event);
+    });
   }
 
   async getAvailableDevices(): Promise<MediaDeviceInfo[]> {
@@ -282,9 +126,7 @@ class WebRTCService {
   async setVideoDevice(deviceId: string): Promise<void> {
     try {
       if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(track => {
-          track.stop();
-        });
+        this.mediaStream.getTracks().forEach(track => track.stop());
         this.mediaStream = null;
       }
 
@@ -296,135 +138,51 @@ class WebRTCService {
       }
 
       this.deviceId = deviceId;
-      try {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            deviceId: { exact: deviceId },
-            width: { ideal: 1280, min: 640 },
-            height: { ideal: 720, min: 480 }
-          },
-          audio: true
-        });
-      } catch (err) {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: deviceId } },
-          audio: true
-        });
-      }
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          deviceId: { exact: deviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: true
+      });
 
-      if (this.currentCall && this.currentCall.peerConnection) {
+      if (this.peer) {
         const videoTrack = this.mediaStream.getVideoTracks()[0];
-        const sender = this.currentCall.peerConnection.getSenders()
-          .find(s => s.track?.kind === 'video');
+        const sender = this.peer.streams[0]?.getVideoTracks()[0];
         if (sender) {
-          await sender.replaceTrack(videoTrack);
+          sender.replaceTrack(videoTrack);
         }
       }
     } catch (err) {
       console.error('Error switching device:', err);
-      throw new Error('Failed to switch camera device. Please ensure the camera is not in use by another application and try again.');
+      throw new Error('Failed to switch camera device');
     }
   }
 
   async getLocalStream(): Promise<MediaStream> {
     if (!this.mediaStream) {
-      const constraints: MediaStreamConstraints = {
-        video: this.deviceId ? {
-          deviceId: { exact: this.deviceId },
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 }
-        } : true,
-        audio: true
-      };
-
-      try {
-        if (this.mediaStream) {
-          this.mediaStream.getTracks().forEach(track => track.stop());
-        }
-        
-        this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (err) {
-        console.error('Error accessing media devices:', err);
-        throw new Error('Could not access camera or microphone. Please check your device permissions and ensure no other application is using the camera.');
-      }
+      await this.initializeDevices();
     }
-    return this.mediaStream;
+    return this.mediaStream!;
   }
 
-  async makeCall(remotePeerId: string): Promise<void> {
-    if (!this.peer || this.peer.disconnected) {
-      throw new Error('Not connected to server. Please wait for reconnection or refresh the page.');
+  signalPeer(signal: SimplePeer.SignalData) {
+    if (this.peer) {
+      this.peer.signal(signal);
     }
-
-    try {
-      console.log('Making call to:', remotePeerId);
-      const stream = await this.getLocalStream();
-      const call = this.peer.call(remotePeerId, stream);
-      this.handleCall(call);
-    } catch (err) {
-      console.error('Error making call:', err);
-      throw new Error('Failed to make call. Please check your camera and microphone permissions.');
-    }
-  }
-
-  private handleCall(call: MediaConnection) {
-    this.currentCall = call;
-
-    call.on('stream', (remoteStream: MediaStream) => {
-      console.log('Received remote stream');
-      const event = new CustomEvent('remoteStream', { detail: remoteStream });
-      window.dispatchEvent(event);
-    });
-
-    call.on('close', () => {
-      console.log('Call ended');
-      this.currentCall = null;
-      const event = new CustomEvent('callEnded');
-      window.dispatchEvent(event);
-    });
-
-    call.on('error', (err) => {
-      console.error('Call error:', err);
-      this.currentCall = null;
-      const event = new CustomEvent('peerError', {
-        detail: { message: 'Call connection error. Please check your network connection and try again.' }
-      });
-      window.dispatchEvent(event);
-    });
   }
 
   disconnect() {
-    if (this.connectionCheckInterval) {
-      clearInterval(this.connectionCheckInterval);
-      this.connectionCheckInterval = null;
-    }
-
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach(track => track.stop());
       this.mediaStream = null;
-    }
-
-    if (this.currentCall) {
-      this.currentCall.close();
-      this.currentCall = null;
     }
 
     if (this.peer) {
       this.peer.destroy();
       this.peer = null;
     }
-
-    this.reconnectAttempts = 0;
-    this.isReconnecting = false;
-  }
-
-  getPeerId(): string | null {
-    return this.peer?.id || null;
   }
 }
 
