@@ -27,16 +27,12 @@ const FacialVerification: React.FC = () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'user',
           width: { ideal: 1280 },
-          height: { ideal: 720 }
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
         }
       });
       
-      if (!mediaStream) {
-        throw new Error('Failed to get media stream');
-      }
-
       setStream(mediaStream);
       
       if (videoRef.current) {
@@ -145,7 +141,6 @@ const FacialVerification: React.FC = () => {
             />
             <canvas ref={canvasRef} className="hidden" />
             
-            {/* Face outline overlay */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="border-4 border-dashed border-blue-400 rounded-full w-64 h-64 flex items-center justify-center">
                 {countdown !== null && (
