@@ -18,21 +18,32 @@ class WebRTCService {
 
   async initializeDevices(): Promise<void> {
     try {
+      // Stop any existing streams
       if (this.mediaStream) {
         this.mediaStream.getTracks().forEach(track => track.stop());
         this.mediaStream = null;
       }
 
+      // Request permissions and get stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           frameRate: { ideal: 30 }
         },
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       });
 
+      if (!stream) {
+        throw new Error('Failed to get media stream');
+      }
+
       this.mediaStream = stream;
+
+      // Get available devices
       const devices = await navigator.mediaDevices.enumerateDevices();
       this.devices = devices.filter(device => device.kind === 'videoinput');
 
@@ -41,14 +52,63 @@ class WebRTCService {
       }
 
       this.deviceId = this.devices[0].deviceId;
+
+      // Add track ended handlers
+      stream.getTracks().forEach(track => {
+        track.onended = () => {
+          console.log(`Track ${track.kind} ended`);
+          this.restartTrack(track.kind);
+        };
+      });
+
     } catch (err) {
       console.error('Error initializing devices:', err);
       throw new Error('Failed to access camera/microphone');
     }
   }
 
+  private async restartTrack(kind: string) {
+    try {
+      const constraints = {
+        video: kind === 'video' ? {
+          deviceId: this.deviceId ? { exact: this.deviceId } : undefined,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        } : false,
+        audio: kind === 'audio' ? {
+          echoCancellation: true,
+          noiseSuppression: true
+        } : false
+      };
+
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const newTrack = newStream.getTracks()[0];
+
+      if (this.mediaStream) {
+        const oldTrack = this.mediaStream.getTracks().find(t => t.kind === kind);
+        if (oldTrack) {
+          oldTrack.stop();
+          this.mediaStream.removeTrack(oldTrack);
+          this.mediaStream.addTrack(newTrack);
+        }
+
+        // Update peer connection if it exists
+        if (this.peer) {
+          const sender = this.peer.streams[0].getTracks().find(t => t.kind === kind);
+          if (sender) {
+            sender.replaceTrack(newTrack);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Error restarting ${kind} track:`, err);
+    }
+  }
+
   async initialize(isInitiator: boolean): Promise<void> {
     try {
+      // Ensure we have a media stream
       if (!this.mediaStream) {
         await this.initializeDevices();
       }
@@ -57,11 +117,13 @@ class WebRTCService {
         throw new Error('Failed to initialize media stream');
       }
 
+      // Clean up existing peer if any
       if (this.peer) {
         this.peer.destroy();
         this.peer = null;
       }
 
+      // Create new peer
       this.peer = new SimplePeer({
         initiator: isInitiator,
         stream: this.mediaStream,
@@ -71,7 +133,8 @@ class WebRTCService {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' }
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
           ]
         }
       });
@@ -92,6 +155,7 @@ class WebRTCService {
     });
 
     this.peer.on('stream', stream => {
+      console.log('Received remote stream:', stream);
       const event = new CustomEvent('remoteStream', { detail: stream });
       window.dispatchEvent(event);
     });
@@ -127,6 +191,10 @@ class WebRTCService {
         },
         audio: true
       });
+
+      if (!newStream) {
+        throw new Error('Failed to get stream from new device');
+      }
 
       if (this.mediaStream) {
         const oldVideoTrack = this.mediaStream.getVideoTracks()[0];
@@ -179,7 +247,9 @@ class WebRTCService {
 
   disconnect() {
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop());
+      this.mediaStream.getTracks().forEach(track => {
+        track.stop();
+      });
       this.mediaStream = null;
     }
 

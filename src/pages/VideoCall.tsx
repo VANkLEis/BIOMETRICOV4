@@ -32,26 +32,44 @@ const VideoCall: React.FC = () => {
       try {
         setConnectionError(null);
         
+        // Initialize WebRTC
         await WebRTCService.initialize(role === 'interviewer');
-        const stream = await WebRTCService.getLocalStream();
         
+        // Get local stream
+        const stream = await WebRTCService.getLocalStream();
         if (!stream) {
           throw new Error('Could not access camera or microphone');
         }
 
+        // Set local stream
         setLocalStream(stream);
         
+        // Set up local video
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
-          await localVideoRef.current.play();
+          try {
+            await localVideoRef.current.play();
+          } catch (err) {
+            console.error('Error playing local video:', err);
+            throw new Error('Failed to display local video');
+          }
         }
 
+        // Set up event listeners
         const handleRemoteStream = async (event: CustomEvent<MediaStream>) => {
-          setRemoteStream(event.detail);
+          const remoteStream = event.detail;
+          setRemoteStream(remoteStream);
+          
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.detail;
-            await remoteVideoRef.current.play();
+            remoteVideoRef.current.srcObject = remoteStream;
+            try {
+              await remoteVideoRef.current.play();
+            } catch (err) {
+              console.error('Error playing remote video:', err);
+              throw new Error('Failed to display remote video');
+            }
           }
+          
           setConnectionEstablished(true);
           setIsCalling(false);
         };
