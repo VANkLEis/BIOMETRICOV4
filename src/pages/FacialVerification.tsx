@@ -15,42 +15,38 @@ const FacialVerification: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    startCamera();
+    const initCamera = async () => {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          }
+        });
+        
+        setStream(mediaStream);
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          await videoRef.current.play();
+        }
+        
+        setError(null);
+      } catch (err) {
+        console.error('Error accessing camera:', err);
+        setError('Unable to access camera. Please make sure you have granted camera permissions and are using HTTPS.');
+      }
+    };
+
+    initCamera();
+
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
-
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        }
-      });
-      
-      setStream(mediaStream);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        try {
-          await videoRef.current.play();
-        } catch (err) {
-          console.error('Error playing video:', err);
-          throw new Error('Failed to start video stream');
-        }
-      }
-      
-      setError(null);
-    } catch (err) {
-      console.error('Error accessing camera:', err);
-      setError('Unable to access camera. Please make sure you have granted camera permissions.');
-    }
-  };
 
   const captureImage = () => {
     if (videoRef.current && canvasRef.current) {
