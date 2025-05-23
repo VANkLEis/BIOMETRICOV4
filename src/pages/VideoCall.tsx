@@ -16,8 +16,6 @@ const VideoCall: React.FC = () => {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isCalling, setIsCalling] = useState(true);
-  const [connectionEstablished, setConnectionEstablished] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [signalData, setSignalData] = useState<string>('');
@@ -32,56 +30,25 @@ const VideoCall: React.FC = () => {
       try {
         setConnectionError(null);
         
-        // Initialize WebRTC
-        await WebRTCService.initialize(role === 'interviewer');
-        
-        // Get local stream
+        // Get local stream first
         const stream = await WebRTCService.getLocalStream();
-        if (!stream) {
-          throw new Error('Could not access camera or microphone');
-        }
-
-        // Set local stream
         setLocalStream(stream);
         
-        // Set up local video
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
-          try {
-            await localVideoRef.current.play();
-          } catch (err) {
-            console.error('Error playing local video:', err);
-            throw new Error('Failed to display local video');
-          }
         }
 
+        // Initialize WebRTC
+        await WebRTCService.initialize(role === 'interviewer');
+
         // Set up event listeners
-        const handleRemoteStream = async (event: CustomEvent<MediaStream>) => {
-          const remoteStream = event.detail;
-          setRemoteStream(remoteStream);
+        const handleRemoteStream = (event: CustomEvent<MediaStream>) => {
+          const stream = event.detail;
+          setRemoteStream(stream);
           
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-            try {
-              await remoteVideoRef.current.play();
-            } catch (err) {
-              console.error('Error playing remote video:', err);
-              throw new Error('Failed to display remote video');
-            }
+            remoteVideoRef.current.srcObject = stream;
           }
-          
-          setConnectionEstablished(true);
-          setIsCalling(false);
-        };
-
-        const handleCallEnded = () => {
-          setConnectionEstablished(false);
-          navigate('/dashboard');
-        };
-
-        const handlePeerError = (event: CustomEvent) => {
-          setConnectionError(event.detail?.message || 'Connection error occurred');
-          setIsCalling(false);
         };
 
         const handlePeerSignal = (event: CustomEvent) => {
@@ -89,20 +56,15 @@ const VideoCall: React.FC = () => {
         };
 
         window.addEventListener('remoteStream', handleRemoteStream as EventListener);
-        window.addEventListener('callEnded', handleCallEnded);
-        window.addEventListener('peerError', handlePeerError as EventListener);
         window.addEventListener('peerSignal', handlePeerSignal as EventListener);
 
         return () => {
           window.removeEventListener('remoteStream', handleRemoteStream as EventListener);
-          window.removeEventListener('callEnded', handleCallEnded);
-          window.removeEventListener('peerError', handlePeerError as EventListener);
           window.removeEventListener('peerSignal', handlePeerSignal as EventListener);
         };
       } catch (err) {
         console.error('Error initializing call:', err);
         setConnectionError(err instanceof Error ? err.message : 'Failed to initialize call');
-        setIsCalling(false);
       }
     };
 
@@ -119,7 +81,6 @@ const VideoCall: React.FC = () => {
       WebRTCService.signalPeer(signal);
     } catch (err) {
       console.error('Invalid signal data:', err);
-      setConnectionError('Invalid connection data format');
     }
   };
 
@@ -183,7 +144,7 @@ const VideoCall: React.FC = () => {
         </div>
 
         <div className="w-1/2 relative bg-black">
-          {connectionEstablished ? (
+          {remoteStream ? (
             <video
               ref={remoteVideoRef}
               autoPlay
