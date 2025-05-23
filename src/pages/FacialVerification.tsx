@@ -17,25 +17,44 @@ const FacialVerification: React.FC = () => {
   useEffect(() => {
     const initCamera = async () => {
       try {
+        // First try to get user media with ideal constraints
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             frameRate: { ideal: 30 }
           }
+        }).catch(async () => {
+          // If that fails, try with minimal constraints
+          return await navigator.mediaDevices.getUserMedia({
+            video: true
+          });
         });
+        
+        if (!mediaStream) {
+          throw new Error('Failed to get media stream');
+        }
         
         setStream(mediaStream);
         
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
-          await videoRef.current.play();
+          try {
+            await videoRef.current.play();
+          } catch (playError) {
+            console.error('Error playing video:', playError);
+            throw new Error('Failed to start video stream');
+          }
         }
         
         setError(null);
       } catch (err) {
         console.error('Error accessing camera:', err);
-        setError('Unable to access camera. Please make sure you have granted camera permissions and are using HTTPS.');
+        let errorMessage = 'Unable to access camera. Please ensure:';
+        errorMessage += '\n1. You have granted camera permissions';
+        errorMessage += '\n2. Your camera is not being used by another application';
+        errorMessage += '\n3. You are using a secure connection (HTTPS)';
+        setError(errorMessage);
       }
     };
 
@@ -59,7 +78,7 @@ const FacialVerification: React.FC = () => {
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        // Convert the captured image to base64 format for verification
+        // Convert the captured image to base64 format with JPEG for better performance
         return canvas.toDataURL('image/jpeg', 0.8);
       }
     }
@@ -67,6 +86,11 @@ const FacialVerification: React.FC = () => {
   };
 
   const verifyFace = async () => {
+    if (!stream || !stream.active) {
+      setError('Camera stream is not active. Please refresh the page and try again.');
+      return;
+    }
+
     setVerifying(true);
     setError(null);
     
@@ -83,8 +107,8 @@ const FacialVerification: React.FC = () => {
         throw new Error('Failed to capture facial image');
       }
 
-      // Simulate sending the image data to a verification service
-      console.log('Sending facial data for verification:', imageData.substring(0, 50) + '...');
+      // Log the first part of the image data to verify capture
+      console.log('Captured facial data:', imageData.substring(0, 50) + '...');
       
       // Simulate verification process
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -100,6 +124,7 @@ const FacialVerification: React.FC = () => {
         setError('Verification failed. Please try again.');
       }
     } catch (err) {
+      console.error('Verification error:', err);
       setError('An error occurred during verification. Please try again.');
     } finally {
       setVerifying(false);
@@ -132,7 +157,7 @@ const FacialVerification: React.FC = () => {
                   <X className="h-5 w-5 text-red-400" />
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm text-red-700">{error}</p>
+                  <p className="text-sm text-red-700 whitespace-pre-line">{error}</p>
                 </div>
               </div>
             </div>
