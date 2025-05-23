@@ -1,14 +1,14 @@
 // PeerJS server configuration
 export const peerConfig = {
   // PeerJS server configuration for local network
-  SERVER_URL: '192.168.1.16', // Your local IP address
+  SERVER_URL: 'localhost', // Using localhost for secure local development
   SERVER_PORT: 9000,
   SERVER_PATH: '/peerjs',
   
   // PeerJS configuration
   CONFIG: {
     debug: 3,
-    secure: false, // Set to false for local network
+    secure: true, // Enable secure connections
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -25,6 +25,6 @@ export const getPeerServerUrl = () => {
     host: SERVER_URL,
     port: SERVER_PORT,
     path: SERVER_PATH,
-    secure: false // Set to false for local network
+    secure: true // Enable secure connections
   };
 };
