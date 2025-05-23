@@ -9,8 +9,9 @@ class WebRTCService {
   private deviceId: string | null = null;
   private devices: MediaDeviceInfo[] = [];
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5; // Increased to match config
+  private maxReconnectAttempts = 3;
   private reconnectTimeout: number | null = null;
+  private connectionCheckInterval: number | null = null;
 
   private constructor() {}
 
@@ -23,39 +24,101 @@ class WebRTCService {
 
   async initializeDevices(): Promise<void> {
     try {
-      // First check if we have permissions
       const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
       if (permissions.state === 'denied') {
         throw new Error('Camera permission denied. Please enable camera access and refresh the page.');
       }
 
-      // Stop any existing streams before requesting new ones
       if (this.mediaStream) {
         this.mediaStream.getTracks().forEach(track => track.stop());
         this.mediaStream = null;
       }
 
-      // Request permissions with fallback options
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
-        audio: true 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       
       this.mediaStream = stream;
-
-      // Enumerate devices after getting permissions
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      this.devices = devices.filter(device => device.kind === 'videoinput');
+      this.devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter(device => device.kind === 'videoinput');
       
       if (this.devices.length === 0) {
         throw new Error('No video devices found');
       }
 
-      // Set initial device
       this.deviceId = this.devices[0].deviceId;
+
+      // Monitor track states
+      stream.getTracks().forEach(track => {
+        track.onended = () => this.handleTrackEnded(track);
+        track.onmute = () => this.handleTrackMuted(track);
+        track.onunmute = () => this.handleTrackUnmuted(track);
+      });
     } catch (err) {
       console.error('Error initializing devices:', err);
       throw new Error(err instanceof Error ? err.message : 'Could not access camera or microphone');
+    }
+  }
+
+  private handleTrackEnded(track: MediaStreamTrack) {
+    console.log(`Track ${track.kind} ended, attempting to restart...`);
+    this.restartTrack(track.kind);
+  }
+
+  private handleTrackMuted(track: MediaStreamTrack) {
+    console.log(`Track ${track.kind} muted, attempting to unmute...`);
+    track.enabled = true;
+  }
+
+  private handleTrackUnmuted(track: MediaStreamTrack) {
+    console.log(`Track ${track.kind} unmuted`);
+  }
+
+  private async restartTrack(kind: string) {
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: kind === 'video' ? {
+          deviceId: this.deviceId ? { exact: this.deviceId } : undefined,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 }
+        } : false,
+        audio: kind === 'audio' ? {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } : false
+      });
+
+      if (this.mediaStream && this.currentCall?.peerConnection) {
+        const newTrack = newStream.getTracks()[0];
+        const sender = this.currentCall.peerConnection.getSenders()
+          .find(s => s.track?.kind === kind);
+        
+        if (sender) {
+          await sender.replaceTrack(newTrack);
+          console.log(`Successfully replaced ${kind} track`);
+        }
+
+        // Update mediaStream
+        const oldTrack = this.mediaStream.getTracks().find(t => t.kind === kind);
+        if (oldTrack) {
+          oldTrack.stop();
+          this.mediaStream.removeTrack(oldTrack);
+          this.mediaStream.addTrack(newTrack);
+        }
+      }
+    } catch (err) {
+      console.error(`Error restarting ${kind} track:`, err);
     }
   }
 
@@ -79,6 +142,7 @@ class WebRTCService {
 
         this.peer.on('open', () => {
           console.log('Connected to PeerJS server with ID:', this.peer!.id);
+          this.startConnectionCheck();
           this.reconnectAttempts = 0;
           resolve();
         });
@@ -113,6 +177,29 @@ class WebRTCService {
     }
   }
 
+  private startConnectionCheck() {
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
+    }
+
+    this.connectionCheckInterval = window.setInterval(() => {
+      if (this.currentCall?.peerConnection) {
+        const pc = this.currentCall.peerConnection;
+        pc.getStats().then(stats => {
+          stats.forEach(report => {
+            if (report.type === 'media-source' || report.type === 'track') {
+              if (report.kind === 'video' || report.kind === 'audio') {
+                if (report.ended || report.muted) {
+                  this.restartTrack(report.kind);
+                }
+              }
+            }
+          });
+        });
+      }
+    }, 2000);
+  }
+
   private handleDisconnection() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       const event = new CustomEvent('peerError', {
@@ -123,7 +210,7 @@ class WebRTCService {
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 5000);
 
     if (this.reconnectTimeout) {
       window.clearTimeout(this.reconnectTimeout);
@@ -145,7 +232,6 @@ class WebRTCService {
 
   async setVideoDevice(deviceId: string): Promise<void> {
     try {
-      // Stop ALL current tracks before attempting to switch
       if (this.mediaStream) {
         this.mediaStream.getTracks().forEach(track => {
           track.stop();
@@ -153,7 +239,6 @@ class WebRTCService {
         this.mediaStream = null;
       }
 
-      // Verify device exists and is available
       const devices = await navigator.mediaDevices.enumerateDevices();
       const device = devices.find(d => d.deviceId === deviceId && d.kind === 'videoinput');
       
@@ -161,7 +246,6 @@ class WebRTCService {
         throw new Error('Selected video device not found');
       }
 
-      // Get new stream with selected device with fallback constraints
       this.deviceId = deviceId;
       try {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -173,14 +257,12 @@ class WebRTCService {
           audio: true
         });
       } catch (err) {
-        // Fallback to basic constraints if ideal values fail
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: deviceId } },
           audio: true
         });
       }
 
-      // If in a call, replace tracks
       if (this.currentCall && this.currentCall.peerConnection) {
         const videoTrack = this.mediaStream.getVideoTracks()[0];
         const sender = this.currentCall.peerConnection.getSenders()
@@ -207,7 +289,6 @@ class WebRTCService {
       };
 
       try {
-        // Stop any existing tracks first
         if (this.mediaStream) {
           this.mediaStream.getTracks().forEach(track => track.stop());
         }
@@ -261,8 +342,13 @@ class WebRTCService {
   }
 
   disconnect() {
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
+      this.connectionCheckInterval = null;
+    }
+
     if (this.reconnectTimeout) {
-      window.clearTimeout(this.reconnectTimeout);
+      clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
 
