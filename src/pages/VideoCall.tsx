@@ -1,56 +1,201 @@
-// ... (previous imports remain the same)
+import React, { useEffect, useRef, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useRole } from '../contexts/RoleContext';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Users, MessageSquare } from 'lucide-react';
+import RoleSelector from '../components/RoleSelector';
+import WebRTCService from '../services/webrtc';
 
 const VideoCall: React.FC = () => {
-  // ... (previous state declarations remain the same)
+  const { roomId } = useParams<{ roomId: string }>();
+  const { user } = useAuth();
+  const { role } = useRole();
+  const navigate = useNavigate();
+  
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isCalling, setIsCalling] = useState(true);
+  const [connectionEstablished, setConnectionEstablished] = useState(false);
+  const [showRoleSelector, setShowRoleSelector] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const reconnectTimeoutRef = useRef<number>();
 
-  const [scanningActive, setScanningActive] = useState(false);
-  const scanAnimationRef = useRef<number>();
-
-  // Add scanning animation
   useEffect(() => {
-    if (scanningActive && biometricType) {
-      let progress = 0;
-      const animate = () => {
-        progress = (progress + 1) % 100;
-        setScanProgress(progress);
-        scanAnimationRef.current = requestAnimationFrame(animate);
-      };
-      scanAnimationRef.current = requestAnimationFrame(animate);
+    if (!role || !roomId || !user) return;
 
-      return () => {
-        if (scanAnimationRef.current) {
-          cancelAnimationFrame(scanAnimationRef.current);
+    const initializeWebRTC = async () => {
+      try {
+        setConnectionError(null);
+        await WebRTCService.initialize(user.id.toString());
+        const stream = await WebRTCService.getLocalStream();
+        setLocalStream(stream);
+        
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
         }
-      };
-    }
-  }, [scanningActive, biometricType]);
 
-  const verifyBiometric = async (type: 'face' | 'fingerprint') => {
-    if (role !== 'interviewer') return;
-    
-    setVerifyingBiometrics(true);
-    setBiometricType(type);
-    setScanningActive(true);
-    
-    try {
-      // Simulate verification process
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      setBiometricStatus(prev => ({
-        ...prev,
-        [type]: true
-      }));
-    } finally {
-      setScanningActive(false);
-      setVerifyingBiometrics(false);
-      setBiometricType(null);
-      if (scanAnimationRef.current) {
-        cancelAnimationFrame(scanAnimationRef.current);
+        window.addEventListener('remoteStream', ((event: CustomEvent) => {
+          setRemoteStream(event.detail);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.detail;
+          }
+          setConnectionEstablished(true);
+          setIsCalling(false);
+        }) as EventListener);
+
+        window.addEventListener('callEnded', () => {
+          setConnectionEstablished(false);
+        });
+
+        window.addEventListener('peerError', ((event: CustomEvent) => {
+          const errorMessage = event.detail?.message || 'Connection error occurred';
+          setConnectionError(errorMessage);
+          setIsCalling(false);
+        }) as EventListener);
+
+        if (role === 'interviewer') {
+          setIsCalling(true);
+        } else {
+          await WebRTCService.makeCall(roomId);
+        }
+      } catch (err) {
+        console.error('Error initializing WebRTC:', err);
+        setConnectionError('Failed to connect. Please try again.');
+        setIsCalling(false);
       }
+    };
+
+    initializeWebRTC();
+
+    return () => {
+      WebRTCService.disconnect();
+      window.removeEventListener('remoteStream', () => {});
+      window.removeEventListener('callEnded', () => {});
+      window.removeEventListener('peerError', () => {});
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [role, roomId, user]);
+
+  const toggleAudio = () => {
+    if (localStream) {
+      localStream.getAudioTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsAudioMuted(!isAudioMuted);
     }
   };
 
-  // ... (rest of the component remains the same)
-};
+  const toggleVideo = () => {
+    if (localStream) {
+      localStream.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsVideoOff(!isVideoOff);
+    }
+  };
 
-export default VideoCall;
+  const endCall = () => {
+    WebRTCService.disconnect();
+    navigate('/dashboard');
+  };
+
+  const handleRoleSelected = () => {
+    setShowRoleSelector(false);
+  };
+
+  if (showRoleSelector) {
+    return <RoleSelector onSelect={handleRoleSelected} />;
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-900">
+      {connectionError && (
+        <div className="absolute inset-x-0 top-4 flex justify-center z-50">
+          <div className="bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg">
+            {connectionError}
+          </div>
+        </div>
+      )}
+
+      {isCalling && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-90">
+          <div className="text-center text-white">
+            <div className="animate-ping inline-flex h-24 w-24 rounded-full bg-blue-400 opacity-75 mb-4"></div>
+            <h2 className="text-2xl font-semibold mb-2">Connecting to call...</h2>
+            <p className="text-gray-300">Room ID: {roomId}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-1">
+        <div className="w-1/2 relative bg-black border-r border-gray-800">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          {isVideoOff && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+              <VideoOff className="h-16 w-16 text-gray-400" />
+            </div>
+          )}
+        </div>
+
+        <div className="w-1/2 relative bg-black">
+          {connectionEstablished ? (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Users className="h-24 w-24 text-gray-500 opacity-50" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-gray-800 px-6 py-3 flex items-center justify-center space-x-4">
+        <button
+          onClick={toggleAudio}
+          className={`p-3 rounded-full ${isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+        >
+          {isAudioMuted ? (
+            <MicOff className="h-6 w-6 text-white" />
+          ) : (
+            <Mic className="h-6 w-6 text-white" />
+          )}
+        </button>
+        
+        <button
+          onClick={toggleVideo}
+          className={`p-3 rounded-full ${isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+        >
+          {isVideoOff ? (
+            <VideoOff className="h-6 w-6 text-white" />
+          ) : (
+            <VideoIcon className="h-6 w-6 text-white" />
+          )}
+        </button>
+        
+        <button
+          onClick={endCall}
+          className="p-3 rounded-full bg-red-600 hover:bg-red-700"
+        >
+          <Phone className="h-6 w-6 text-white transform rotate-135" />
+        </button>
+      </div>
+    </div>
+  );
+};

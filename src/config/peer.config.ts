@@ -5,24 +5,15 @@ export const peerConfig = {
   SERVER_PORT: 9000,
   SERVER_PATH: '/peerjs',
   
-  // Enhanced PeerJS configuration options
+  // Basic PeerJS configuration for local development
   CONFIG: {
     debug: 3,
     secure: false,
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'all',
-      // Add connection stability improvements
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
-    },
-    // Improved connection stability settings
-    pingInterval: 1000,
-    retryTimes: 3,
-    reconnectTimer: 1000
+      ]
+    }
   }
 };
 
@@ -32,6 +23,7 @@ export const getPeerServerUrl = () => {
   return {
     host: SERVER_URL,
     port: SERVER_PORT,
-    path: SERVER_PATH
+    path: SERVER_PATH,
+    secure: false
   };
 };
