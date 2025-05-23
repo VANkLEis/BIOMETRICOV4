@@ -25,19 +25,28 @@ const FacialVerification: React.FC = () => {
 
   const startCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
           facingMode: 'user',
           width: { ideal: 1280 },
           height: { ideal: 720 }
-        } 
+        }
       });
+      
+      if (!mediaStream) {
+        throw new Error('Failed to get media stream');
+      }
+
       setStream(mediaStream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        // Forzar la reproducción del video
-        await videoRef.current.play();
+        try {
+          await videoRef.current.play();
+        } catch (err) {
+          console.error('Error playing video:', err);
+          throw new Error('Failed to start video stream');
+        }
       }
       
       setError(null);
@@ -57,9 +66,6 @@ const FacialVerification: React.FC = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // In a real app, you'd send this image to your server for facial recognition
-        // For demo, we'll simulate the process
         return canvas.toDataURL('image/png');
       }
     }
@@ -70,7 +76,6 @@ const FacialVerification: React.FC = () => {
     setVerifying(true);
     setError(null);
     
-    // Start countdown
     setCountdown(3);
     for (let i = 2; i >= 0; i--) {
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -79,18 +84,12 @@ const FacialVerification: React.FC = () => {
     
     try {
       const imageData = captureImage();
-      
-      // Simulate verification process (would be server-side in a real app)
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Simulate success (93% of the time) or failure (7% of the time)
       const isSuccessful = Math.random() > 0.07;
       
       if (isSuccessful) {
         setSuccess(true);
         setFaceVerified(true);
-        
-        // Redirect after a short delay
         setTimeout(() => {
           navigate('/dashboard');
         }, 2000);
