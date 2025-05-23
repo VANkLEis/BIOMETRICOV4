@@ -133,13 +133,23 @@ class WebRTCService {
         this.peer.destroy();
       }
 
+      // Clear any existing timeouts and intervals
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+      if (this.connectionCheckInterval) {
+        clearInterval(this.connectionCheckInterval);
+        this.connectionCheckInterval = null;
+      }
+
       const serverConfig = getPeerServerUrl();
       console.log('Connecting to PeerJS server with config:', serverConfig);
 
       this.peer = new Peer(userId, {
         ...serverConfig,
         ...peerConfig.CONFIG,
-        retryTimer: 3000 // Add retry timer for connection attempts
+        retryTimer: 3000
       });
 
       return new Promise((resolve, reject) => {
@@ -166,15 +176,18 @@ class WebRTCService {
 
         this.peer.on('disconnected', () => {
           console.log('Disconnected from server, attempting to reconnect...');
-          this.handleDisconnection();
+          if (!this.isReconnecting) {
+            this.handleDisconnection();
+          }
         });
 
         this.peer.on('error', (err) => {
           console.error('PeerJS error:', err);
           if (err.type === 'network' || err.type === 'server-error') {
-            this.handleDisconnection();
+            if (!this.isReconnecting) {
+              this.handleDisconnection();
+            }
           } else if (err.type === 'unavailable-id') {
-            // Handle case where user ID is already taken
             reject(new Error('User ID is already in use. Please try again with a different ID.'));
           } else if (err.type === 'invalid-id') {
             reject(new Error('Invalid user ID format. Please use only alphanumeric characters.'));
@@ -227,7 +240,16 @@ class WebRTCService {
   }
 
   private handleDisconnection() {
-    if (this.isReconnecting) return;
+    // Clear any existing reconnect timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    // If we're already reconnecting or the peer is not actually disconnected, don't proceed
+    if (this.isReconnecting || (this.peer && !this.peer.disconnected)) {
+      return;
+    }
     
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.isReconnecting = false;
@@ -242,14 +264,12 @@ class WebRTCService {
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
 
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
-
     this.reconnectTimeout = window.setTimeout(() => {
-      if (this.peer) {
+      if (this.peer && this.peer.disconnected) {
         console.log(`Attempting to reconnect (attempt ${this.reconnectAttempts} of ${this.maxReconnectAttempts})...`);
         this.peer.reconnect();
+      } else {
+        this.isReconnecting = false;
       }
     }, delay);
   }
