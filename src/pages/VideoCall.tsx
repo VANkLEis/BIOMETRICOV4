@@ -25,14 +25,14 @@ const VideoCall: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  const updateVideoStream = async (videoRef: React.RefObject<HTMLVideoElement>, stream: MediaStream | null) => {
+  const setupVideoElement = async (videoRef: React.RefObject<HTMLVideoElement>, stream: MediaStream | null) => {
     if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
       try {
+        videoRef.current.srcObject = stream;
         await videoRef.current.play();
       } catch (err) {
         console.error('Error playing video:', err);
-        setConnectionError('Failed to play video stream. Please refresh the page.');
+        throw new Error('Failed to play video stream');
       }
     }
   };
@@ -40,26 +40,22 @@ const VideoCall: React.FC = () => {
   useEffect(() => {
     if (!role || !roomId || !user) return;
 
-    const initializeWebRTC = async () => {
+    const initializeCall = async () => {
       try {
         setConnectionError(null);
-        const isInitiator = role === 'interviewer';
         
-        // Initialize WebRTC first
-        await WebRTCService.initialize(isInitiator);
+        // Initialize WebRTC with role
+        await WebRTCService.initialize(role === 'interviewer');
         
-        // Get local stream after initialization
+        // Get local stream
         const stream = await WebRTCService.getLocalStream();
-        if (!stream) {
-          throw new Error('Failed to get local media stream');
-        }
-        
         setLocalStream(stream);
-        await updateVideoStream(localVideoRef, stream);
+        await setupVideoElement(localVideoRef, stream);
 
-        const handleRemoteStream = async (event: CustomEvent) => {
+        // Set up event listeners
+        const handleRemoteStream = async (event: CustomEvent<MediaStream>) => {
           setRemoteStream(event.detail);
-          await updateVideoStream(remoteVideoRef, event.detail);
+          await setupVideoElement(remoteVideoRef, event.detail);
           setConnectionEstablished(true);
           setIsCalling(false);
         };
@@ -70,14 +66,12 @@ const VideoCall: React.FC = () => {
         };
 
         const handlePeerError = (event: CustomEvent) => {
-          const errorMessage = event.detail?.message || 'Connection error occurred';
-          setConnectionError(errorMessage);
+          setConnectionError(event.detail?.message || 'Connection error occurred');
           setIsCalling(false);
         };
 
         const handlePeerSignal = (event: CustomEvent) => {
-          const signal = JSON.stringify(event.detail);
-          setSignalData(signal);
+          setSignalData(JSON.stringify(event.detail));
         };
 
         window.addEventListener('remoteStream', handleRemoteStream as EventListener);
@@ -92,41 +86,33 @@ const VideoCall: React.FC = () => {
           window.removeEventListener('peerSignal', handlePeerSignal as EventListener);
         };
       } catch (err) {
-        console.error('Error initializing WebRTC:', err);
-        const errorMessage = err instanceof Error ? err.message : 'Failed to connect. Please check your camera and microphone permissions.';
-        setConnectionError(errorMessage);
+        console.error('Error initializing call:', err);
+        setConnectionError(err instanceof Error ? err.message : 'Failed to initialize call');
         setIsCalling(false);
       }
     };
 
-    initializeWebRTC();
+    initializeCall();
 
     return () => {
       WebRTCService.disconnect();
     };
   }, [role, roomId, user, navigate]);
 
-  useEffect(() => {
-    updateVideoStream(localVideoRef, localStream);
-  }, [localStream]);
-
-  useEffect(() => {
-    updateVideoStream(remoteVideoRef, remoteStream);
-  }, [remoteStream]);
-
   const handleSignalInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     try {
       const signal = JSON.parse(event.target.value);
       WebRTCService.signalPeer(signal);
     } catch (err) {
-      console.error('Invalid signal data');
-      setConnectionError('Invalid connection data format. Please check and try again.');
+      console.error('Invalid signal data:', err);
+      setConnectionError('Invalid connection data format');
     }
   };
 
   const toggleAudio = () => {
     if (localStream) {
-      localStream.getAudioTracks().forEach(track => {
+      const audioTracks = localStream.getAudioTracks();
+      audioTracks.forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsAudioMuted(!isAudioMuted);
@@ -135,7 +121,8 @@ const VideoCall: React.FC = () => {
 
   const toggleVideo = () => {
     if (localStream) {
-      localStream.getVideoTracks().forEach(track => {
+      const videoTracks = localStream.getVideoTracks();
+      videoTracks.forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(!isVideoOff);
