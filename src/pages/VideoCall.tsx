@@ -26,14 +26,16 @@ const VideoCall: React.FC = () => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   const setupVideoElement = async (videoRef: React.RefObject<HTMLVideoElement>, stream: MediaStream | null) => {
-    if (videoRef.current && stream) {
-      try {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      } catch (err) {
-        console.error('Error playing video:', err);
-        throw new Error('Failed to play video stream');
-      }
+    if (!videoRef.current || !stream) {
+      return;
+    }
+
+    try {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+    } catch (err) {
+      console.error('Error playing video:', err);
+      throw new Error('Failed to play video stream');
     }
   };
 
@@ -49,11 +51,20 @@ const VideoCall: React.FC = () => {
         
         // Get local stream
         const stream = await WebRTCService.getLocalStream();
+        
+        // Check if stream is undefined or null
+        if (!stream) {
+          throw new Error('Could not access camera or microphone. Please check your device permissions.');
+        }
+
         setLocalStream(stream);
         await setupVideoElement(localVideoRef, stream);
 
         // Set up event listeners
         const handleRemoteStream = async (event: CustomEvent<MediaStream>) => {
+          if (!event.detail) {
+            throw new Error('Remote stream is unavailable');
+          }
           setRemoteStream(event.detail);
           await setupVideoElement(remoteVideoRef, event.detail);
           setConnectionEstablished(true);
@@ -95,6 +106,9 @@ const VideoCall: React.FC = () => {
     initializeCall();
 
     return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
       WebRTCService.disconnect();
     };
   }, [role, roomId, user, navigate]);
@@ -130,6 +144,9 @@ const VideoCall: React.FC = () => {
   };
 
   const endCall = () => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+    }
     WebRTCService.disconnect();
     navigate('/dashboard');
   };
