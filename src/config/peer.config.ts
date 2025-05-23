@@ -1,27 +1,28 @@
 // PeerJS server configuration
 export const peerConfig = {
-  // Use CloudFlare as STUN server for better reliability
-  SERVER_URL: 'peer.webrtc.wtf', // More reliable PeerJS server
-  SERVER_PORT: 443,
-  SERVER_PATH: '/',
+  // Local PeerJS server configuration
+  SERVER_URL: 'localhost',
+  SERVER_PORT: 9000,
+  SERVER_PATH: '/peerjs',
   
   // Enhanced PeerJS configuration options
   CONFIG: {
     debug: 3,
-    secure: true,
+    secure: false,
     config: {
       iceServers: [
-        { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+        { urls: 'stun:stun.l.google.com:19302' }
       ],
-      iceCandidatePoolSize: 20
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all',
+      // Add connection stability improvements
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     },
-    // Increase reconnect options for better reliability
-    pingInterval: 2000,
-    retryTimes: 5,
-    reconnectTimer: 2000
+    // Improved connection stability settings
+    pingInterval: 1000,
+    retryTimes: 3,
+    reconnectTimer: 1000
   }
 };
 
