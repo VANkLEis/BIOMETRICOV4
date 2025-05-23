@@ -53,17 +53,20 @@ class WebRTCService {
 
   async initialize(isInitiator: boolean): Promise<void> {
     try {
+      // Get local stream first
       const stream = await this.getLocalStream();
       
       if (!stream || !stream.active) {
         throw new Error('No active media stream available');
       }
 
+      // Clean up existing peer if any
       if (this.peer) {
         this.peer.destroy();
         this.peer = null;
       }
 
+      // Create new peer with stream
       this.peer = new SimplePeer({
         initiator: isInitiator,
         stream: stream,
@@ -79,12 +82,21 @@ class WebRTCService {
         }
       });
 
+      // Set up event handlers
       this.peer.on('signal', data => {
+        console.log('Generated signal data:', data);
         const event = new CustomEvent('peerSignal', { detail: data });
         window.dispatchEvent(event);
       });
 
+      this.peer.on('connect', () => {
+        console.log('Peer connection established');
+        const event = new CustomEvent('peerConnected');
+        window.dispatchEvent(event);
+      });
+
       this.peer.on('stream', stream => {
+        console.log('Received remote stream');
         if (!stream || !stream.active) {
           console.error('Received invalid remote stream');
           return;
@@ -102,6 +114,7 @@ class WebRTCService {
       });
 
       this.peer.on('close', () => {
+        console.log('Peer connection closed');
         const event = new CustomEvent('peerClosed');
         window.dispatchEvent(event);
       });
@@ -116,6 +129,7 @@ class WebRTCService {
     if (!this.peer) {
       throw new Error('Peer not initialized');
     }
+    console.log('Received signal data:', signal);
     this.peer.signal(signal);
   }
 
