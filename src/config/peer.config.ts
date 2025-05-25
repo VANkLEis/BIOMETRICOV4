@@ -59,8 +59,6 @@ export const getPeerServerUrl = () => {
     };
   }
 
-  console.log('PeerJS Configuration:', { host, port, path, secure });
-
   return {
     host,
     port,
