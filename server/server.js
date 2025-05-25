@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors({
-  origin: '*',
+  origin: ['https://localhost:5173', 'https://secure-call-cmdy.onrender.com'],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -24,7 +24,7 @@ const peerServer = ExpressPeerServer(server, {
   proxied: true,
   debug: true,
   pingInterval: 5000,
-  ssl: false
+  ssl: true
 });
 
 app.use('/', peerServer);

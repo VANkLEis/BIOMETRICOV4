@@ -40,10 +40,24 @@ export const getPeerServerUrl = () => {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
   // Use environment variables if available, otherwise fall back to config
-  const host = isLocalhost ? window.location.hostname : (import.meta.env.VITE_PEER_HOST || peerConfig.SERVER_URL);
-  const port = isLocalhost ? 3000 : (parseInt(import.meta.env.VITE_PEER_PORT as string) || peerConfig.SERVER_PORT);
+  const host = import.meta.env.VITE_PEER_HOST || peerConfig.SERVER_URL;
+  const port = parseInt(import.meta.env.VITE_PEER_PORT as string) || peerConfig.SERVER_PORT;
   const path = import.meta.env.VITE_PEER_PATH || peerConfig.SERVER_PATH;
-  const secure = isLocalhost ? false : (import.meta.env.VITE_PEER_SECURE === 'true' || true);
+  const secure = import.meta.env.VITE_PEER_SECURE === 'true' || true;
+
+  // Always use HTTPS in production
+  if (!isLocalhost) {
+    return {
+      host: 'secure-call-cmdy.onrender.com',
+      port: 443,
+      path: '/peerjs',
+      secure: true,
+      config: peerConfig.CONFIG.config,
+      debug: 3,
+      pingInterval: 5000,
+      retryTimer: 5000
+    };
+  }
 
   console.log('PeerJS Configuration:', { host, port, path, secure });
 
