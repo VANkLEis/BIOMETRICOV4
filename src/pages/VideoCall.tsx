@@ -30,14 +30,13 @@ const VideoCall: React.FC = () => {
         setConnecting(true);
         setError(null);
 
-        // We're the host if we're creating a new room (no roomId in URL)
-        // or if the roomId matches our generated peerId
-        const currentHost = !roomId || roomId === WebRTCService.getCurrentPeerId();
+        // If there's no roomId in the URL, we're creating a new call, so we're the host
+        const currentHost = !roomId;
         setIsHost(currentHost);
 
         // Generate unique peer ID
         const peerId = currentHost 
-          ? `host-${user?.id}-${Date.now()}`
+          ? roomId || `${user?.id}-${Date.now()}`  // Use existing roomId or generate new one
           : `guest-${user?.id}-${Date.now()}`;
 
         await WebRTCService.initialize(peerId);
@@ -117,9 +116,8 @@ const VideoCall: React.FC = () => {
   };
 
   const copyRoomLink = () => {
-    const peerId = WebRTCService.getCurrentPeerId();
-    if (peerId) {
-      const link = `${window.location.origin}/video-call/${peerId}`;
+    if (roomId) {
+      const link = `${window.location.origin}/video-call/${roomId}`;
       navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -205,7 +203,7 @@ const VideoCall: React.FC = () => {
                     <input
                       type="text"
                       readOnly
-                      value={`${window.location.origin}/video-call/${WebRTCService.getCurrentPeerId()}`}
+                      value={`${window.location.origin}/video-call/${roomId}`}
                       className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
                     />
                     <button
