@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Scan, Hand, Copy, Check } from 'lucide-react';
 import WebRTCService from '../services/webrtc';
+import { v4 as uuidv4 } from 'uuid';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const VideoCall: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [connecting, setConnecting] = useState(true);
+  const [currentRoomId, setCurrentRoomId] = useState<string>('');
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -30,15 +32,17 @@ const VideoCall: React.FC = () => {
         setConnecting(true);
         setError(null);
 
-        // The user who creates the call (navigates directly to /video-call) is the host
-        const isCreatingCall = !roomId;
-        setIsHost(isCreatingCall);
+        // If no roomId is provided in the URL, this user is creating a new room (host)
+        // If roomId is provided, this user is joining an existing room (guest)
+        const newRoomId = roomId || uuidv4();
+        setCurrentRoomId(newRoomId);
+        
+        // Set host status based on whether roomId was provided
+        const userIsHost = !roomId;
+        setIsHost(userIsHost);
 
-        // Generate unique peer ID
-        const peerId = isCreatingCall 
-          ? `host-${user?.id}-${Date.now()}`  // Host ID format
-          : `guest-${user?.id}-${Date.now()}`; // Guest ID format
-
+        // Initialize WebRTC with appropriate peer ID
+        const peerId = userIsHost ? newRoomId : `guest-${user?.id}-${Date.now()}`;
         await WebRTCService.initialize(peerId);
         
         // Get and set local stream
@@ -47,6 +51,11 @@ const VideoCall: React.FC = () => {
         
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+        }
+
+        // If user is a guest, initiate call to host
+        if (!userIsHost && roomId) {
+          WebRTCService.callPeer(roomId);
         }
 
         // Set up event listeners
@@ -64,22 +73,12 @@ const VideoCall: React.FC = () => {
           setError(event.detail.message);
         };
 
-        const handlePeerConnected = () => {
-          console.log('Peer connected successfully');
-          if (!isCreatingCall && roomId) {
-            console.log('Guest initiating call to host:', roomId);
-            WebRTCService.callPeer(roomId);
-          }
-        };
-
         window.addEventListener('remoteStream', handleRemoteStream as EventListener);
         window.addEventListener('peerError', handlePeerError as EventListener);
-        window.addEventListener('peerConnected', handlePeerConnected as EventListener);
 
         return () => {
           window.removeEventListener('remoteStream', handleRemoteStream as EventListener);
           window.removeEventListener('peerError', handlePeerError as EventListener);
-          window.removeEventListener('peerConnected', handlePeerConnected as EventListener);
         };
       } catch (err) {
         console.error('Error initializing call:', err);
@@ -116,7 +115,6 @@ const VideoCall: React.FC = () => {
   };
 
   const copyRoomLink = () => {
-    const currentRoomId = WebRTCService.getCurrentPeerId();
     if (currentRoomId) {
       const link = `${window.location.origin}/video-call/${currentRoomId}`;
       navigator.clipboard.writeText(link);
@@ -204,7 +202,7 @@ const VideoCall: React.FC = () => {
                     <input
                       type="text"
                       readOnly
-                      value={`${window.location.origin}/video-call/${WebRTCService.getCurrentPeerId()}`}
+                      value={`${window.location.origin}/video-call/${currentRoomId}`}
                       className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
                     />
                     <button
@@ -226,7 +224,6 @@ const VideoCall: React.FC = () => {
             </div>
           )}
 
-          {/* Scanning overlay */}
           {isScanning && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
               <div className="relative w-64 h-64">
