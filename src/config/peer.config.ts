@@ -45,6 +45,8 @@ export const getPeerServerUrl = () => {
   const path = import.meta.env.VITE_PEER_PATH || peerConfig.SERVER_PATH;
   const secure = import.meta.env.VITE_PEER_SECURE === 'true' || !isLocalhost;
 
+  console.log('PeerJS Configuration:', { host, port, path, secure });
+
   return {
     host,
     port,
