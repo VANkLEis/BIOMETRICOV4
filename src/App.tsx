@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { LogoProvider } from './contexts/LogoContext';
+import { RoleProvider } from './contexts/RoleContext';
 
 // Pages
 import Login from './pages/Login';
@@ -17,33 +18,35 @@ function App() {
     <Router>
       <AuthProvider>
         <LogoProvider>
-          <Routes>
-            <Route path="/" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route element={<Layout />}>
-              <Route 
-                path="/dashboard" 
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/video-call/:roomId" 
-                element={
-                  <ProtectedRoute>
-                    <VideoCall />
-                  </ProtectedRoute>
-                } 
-              />
-            </Route>
-          </Routes>
+          <RoleProvider>
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route element={<Layout />}>
+                <Route 
+                  path="/dashboard" 
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/video-call/:roomId?" 
+                  element={
+                    <ProtectedRoute>
+                      <VideoCall />
+                    </ProtectedRoute>
+                  } 
+                />
+              </Route>
+            </Routes>
+          </RoleProvider>
         </LogoProvider>
       </AuthProvider>
     </Router>
   );
 }
 
-export default App
+export default App;

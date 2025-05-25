@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 
-type Role = 'interviewer' | 'interviewee' | null;
+type Role = 'host' | 'guest' | null;
 
 interface RoleContextType {
   role: Role;

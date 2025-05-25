@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useRole } from '../contexts/RoleContext';
 import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Scan, Hand, Copy, Check } from 'lucide-react';
 import WebRTCService from '../services/webrtc';
 import { v4 as uuidv4 } from 'uuid';
+import RoleSelector from '../components/RoleSelector';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
   const { roomId } = useParams();
   const { user } = useAuth();
+  const { role, setRole } = useRole();
   
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -19,30 +22,39 @@ const VideoCall: React.FC = () => {
   const [scanType, setScanType] = useState<'face' | 'hand' | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [isHost, setIsHost] = useState(false);
   const [connecting, setConnecting] = useState(true);
   const [currentRoomId, setCurrentRoomId] = useState<string>('');
+  const [showRoleSelector, setShowRoleSelector] = useState(true);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
+    // Reset role when component mounts
+    setRole(null);
+    return () => {
+      WebRTCService.disconnect();
+      setRole(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!role) return;
+
     const initializeCall = async () => {
       try {
         setConnecting(true);
         setError(null);
 
-        // If no roomId is provided in the URL, this user is creating a new room (host)
-        // If roomId is provided, this user is joining an existing room (guest)
-        const newRoomId = roomId || uuidv4();
-        setCurrentRoomId(newRoomId);
-        
-        // Set host status based on whether roomId was provided
-        const userIsHost = !roomId;
-        setIsHost(userIsHost);
+        // Generate or use room ID based on role
+        const newRoomId = role === 'host' ? uuidv4() : roomId;
+        if (!newRoomId && role === 'guest') {
+          throw new Error('Room ID is required for guests');
+        }
+        setCurrentRoomId(newRoomId!);
 
         // Initialize WebRTC with appropriate peer ID
-        const peerId = userIsHost ? newRoomId : `guest-${user?.id}-${Date.now()}`;
+        const peerId = role === 'host' ? newRoomId : `guest-${user?.id}-${Date.now()}`;
         await WebRTCService.initialize(peerId);
         
         // Get and set local stream
@@ -54,7 +66,7 @@ const VideoCall: React.FC = () => {
         }
 
         // If user is a guest, initiate call to host
-        if (!userIsHost && roomId) {
+        if (role === 'guest' && roomId) {
           WebRTCService.callPeer(roomId);
         }
 
@@ -88,11 +100,11 @@ const VideoCall: React.FC = () => {
     };
 
     initializeCall();
+  }, [role, roomId, user]);
 
-    return () => {
-      WebRTCService.disconnect();
-    };
-  }, [roomId, user]);
+  const handleRoleSelect = () => {
+    setShowRoleSelector(false);
+  };
 
   const toggleAudio = () => {
     if (localStream) {
@@ -148,8 +160,13 @@ const VideoCall: React.FC = () => {
 
   const endCall = () => {
     WebRTCService.disconnect();
+    setRole(null);
     navigate('/dashboard');
   };
+
+  if (showRoleSelector) {
+    return <RoleSelector onSelect={handleRoleSelect} />;
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-900">
@@ -176,7 +193,7 @@ const VideoCall: React.FC = () => {
             </div>
           )}
           <div className="absolute top-4 left-4 bg-black bg-opacity-50 px-3 py-1 rounded-full text-white text-sm">
-            You ({isHost ? 'Host' : 'Guest'})
+            You ({role})
           </div>
         </div>
 
@@ -190,12 +207,12 @@ const VideoCall: React.FC = () => {
                 className="w-full h-full object-cover"
               />
               <div className="absolute top-4 left-4 bg-black bg-opacity-50 px-3 py-1 rounded-full text-white text-sm">
-                {isHost ? 'Guest' : 'Host'}
+                {role === 'host' ? 'Guest' : 'Host'}
               </div>
             </>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800 p-6">
-              {isHost ? (
+              {role === 'host' ? (
                 <>
                   <h3 className="text-xl text-white mb-4">Share this link to invite someone</h3>
                   <div className="flex items-center space-x-2">
