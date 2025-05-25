@@ -30,13 +30,16 @@ const VideoCall: React.FC = () => {
         setConnecting(true);
         setError(null);
 
-        // If we have a roomId in the URL, we're a guest
-        // If not, we're the host creating a new room
-        const isHost = !roomId;
-        setIsHost(isHost);
+        // We're the host if we're creating a new room (no roomId in URL)
+        // or if the roomId matches our generated peerId
+        const currentHost = !roomId || roomId === WebRTCService.getCurrentPeerId();
+        setIsHost(currentHost);
 
-        // Initialize WebRTC with a unique ID
-        const peerId = isHost ? `${user?.id}-${Date.now()}` : `${user?.id}-guest-${Date.now()}`;
+        // Generate unique peer ID
+        const peerId = currentHost 
+          ? `host-${user?.id}-${Date.now()}`
+          : `guest-${user?.id}-${Date.now()}`;
+
         await WebRTCService.initialize(peerId);
         
         // Get and set local stream
@@ -64,7 +67,7 @@ const VideoCall: React.FC = () => {
 
         const handlePeerConnected = () => {
           console.log('Peer connected successfully');
-          if (!isHost && roomId) {
+          if (!currentHost && roomId) {
             console.log('Guest initiating call to:', roomId);
             WebRTCService.callPeer(roomId);
           }
