@@ -1,9 +1,13 @@
 import SimplePeer from 'simple-peer';
+import { getPeerServerUrl } from '../config/peer.config';
+import Peer from 'peerjs';
 
 class WebRTCService {
   private static instance: WebRTCService;
-  private peer: SimplePeer.Instance | null = null;
-  private stream: MediaStream | null = null;
+  private peer: Peer | null = null;
+  private connections: Map<string, SimplePeer.Instance> = new Map();
+  private localStream: MediaStream | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -14,16 +18,84 @@ class WebRTCService {
     return WebRTCService.instance;
   }
 
+  async initialize(userId: string): Promise<void> {
+    try {
+      // Get local stream first
+      await this.getLocalStream();
+
+      // Initialize PeerJS connection
+      this.peer = new Peer(userId, getPeerServerUrl());
+
+      this.peer.on('open', (id) => {
+        console.log('Connected to PeerJS server with ID:', id);
+      });
+
+      this.peer.on('call', async (call) => {
+        try {
+          if (!this.localStream) {
+            await this.getLocalStream();
+          }
+          
+          if (this.localStream) {
+            call.answer(this.localStream);
+            
+            call.on('stream', (remoteStream) => {
+              const event = new CustomEvent('remoteStream', { detail: remoteStream });
+              window.dispatchEvent(event);
+            });
+          }
+        } catch (err) {
+          console.error('Error handling incoming call:', err);
+        }
+      });
+
+      this.peer.on('error', (err) => {
+        console.error('PeerJS error:', err);
+        this.handlePeerError();
+      });
+
+      this.peer.on('disconnected', () => {
+        console.log('Disconnected from PeerJS server, attempting to reconnect...');
+        this.handleDisconnection();
+      });
+
+    } catch (err) {
+      console.error('Error initializing WebRTC service:', err);
+      throw err;
+    }
+  }
+
+  private handlePeerError(): void {
+    if (this.peer) {
+      this.peer.destroy();
+      this.peer = null;
+    }
+    
+    // Attempt to reconnect after a delay
+    if (!this.reconnectTimeout) {
+      this.reconnectTimeout = setTimeout(() => {
+        this.initialize(this.peer?.id || `user-${Date.now()}`);
+        this.reconnectTimeout = null;
+      }, 5000);
+    }
+  }
+
+  private handleDisconnection(): void {
+    if (this.peer) {
+      this.peer.reconnect();
+    }
+  }
+
   async getLocalStream(): Promise<MediaStream> {
     try {
-      if (this.stream && this.stream.active) {
-        return this.stream;
+      if (this.localStream && this.localStream.active) {
+        return this.localStream;
       }
 
       // Stop any existing stream
-      if (this.stream) {
-        this.stream.getTracks().forEach(track => track.stop());
-        this.stream = null;
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => track.stop());
+        this.localStream = null;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -34,16 +106,12 @@ class WebRTCService {
         },
         audio: {
           echoCancellation: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          autoGainControl: true
         }
       });
 
-      // Verify stream is valid
-      if (!stream || !stream.active) {
-        throw new Error('Failed to get active media stream');
-      }
-
-      this.stream = stream;
+      this.localStream = stream;
       return stream;
     } catch (err) {
       console.error('Error getting local stream:', err);
@@ -51,104 +119,65 @@ class WebRTCService {
     }
   }
 
-  async initialize(isInitiator: boolean): Promise<void> {
+  async callPeer(peerId: string): Promise<void> {
     try {
-      // Get local stream first
-      const stream = await this.getLocalStream();
+      if (!this.peer || !this.localStream) {
+        throw new Error('Service not properly initialized');
+      }
+
+      const call = this.peer.call(peerId, this.localStream);
       
-      if (!stream || !stream.active) {
-        throw new Error('No active media stream available');
-      }
-
-      // Clean up existing peer if any
-      if (this.peer) {
-        this.peer.destroy();
-        this.peer = null;
-      }
-
-      // Create new peer with stream
-      this.peer = new SimplePeer({
-        initiator: isInitiator,
-        stream: stream,
-        trickle: false,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' }
-          ]
-        }
-      });
-
-      // Set up event handlers
-      this.peer.on('signal', data => {
-        console.log('Generated signal data:', data);
-        const event = new CustomEvent('peerSignal', { detail: data });
+      call.on('stream', (remoteStream) => {
+        const event = new CustomEvent('remoteStream', { detail: remoteStream });
         window.dispatchEvent(event);
       });
 
-      this.peer.on('connect', () => {
-        console.log('Peer connection established');
-        const event = new CustomEvent('peerConnected');
-        window.dispatchEvent(event);
-      });
-
-      this.peer.on('stream', stream => {
-        console.log('Received remote stream');
-        if (!stream || !stream.active) {
-          console.error('Received invalid remote stream');
-          return;
-        }
-        const event = new CustomEvent('remoteStream', { detail: stream });
-        window.dispatchEvent(event);
-      });
-
-      this.peer.on('error', err => {
-        console.error('Peer error:', err);
-        const event = new CustomEvent('peerError', { 
-          detail: { message: 'Connection error occurred' }
+      call.on('error', (err) => {
+        console.error('Call error:', err);
+        const event = new CustomEvent('callError', { 
+          detail: { message: 'Call connection error occurred' }
         });
         window.dispatchEvent(event);
       });
 
-      this.peer.on('close', () => {
-        console.log('Peer connection closed');
-        const event = new CustomEvent('peerClosed');
+      call.on('close', () => {
+        console.log('Call ended');
+        const event = new CustomEvent('callEnded');
         window.dispatchEvent(event);
       });
 
     } catch (err) {
-      console.error('Error initializing peer:', err);
+      console.error('Error calling peer:', err);
       throw err;
     }
   }
 
-  signalPeer(signal: SimplePeer.SignalData) {
-    if (!this.peer) {
-      throw new Error('Peer not initialized');
+  disconnect(): void {
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream = null;
     }
-    console.log('Received signal data:', signal);
-    this.peer.signal(signal);
-  }
 
-  disconnect() {
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => {
-        track.stop();
-      });
-      this.stream = null;
-    }
+    this.connections.forEach(connection => connection.destroy());
+    this.connections.clear();
 
     if (this.peer) {
       this.peer.destroy();
       this.peer = null;
     }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
   }
 
-  isStreamActive(): boolean {
-    return !!(this.stream && this.stream.active);
+  isConnected(): boolean {
+    return !!(this.peer && !this.peer.disconnected);
+  }
+
+  getCurrentPeerId(): string | null {
+    return this.peer?.id || null;
   }
 }
 

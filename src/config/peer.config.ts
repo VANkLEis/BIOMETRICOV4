@@ -1,7 +1,7 @@
 // PeerJS server configuration
 export const peerConfig = {
-  // PeerJS server configuration for local network
-  SERVER_URL: window.location.hostname,
+  // PeerJS server configuration for production
+  SERVER_URL: 'securecall-signaling.onrender.com',
   SERVER_PORT: 443,
   SERVER_PATH: '/peerjs',
   
@@ -9,7 +9,7 @@ export const peerConfig = {
   CONFIG: {
     debug: 3,
     secure: true,
-    host: window.location.hostname,
+    host: 'securecall-signaling.onrender.com',
     port: 443,
     path: '/peerjs',
     config: {
@@ -17,7 +17,17 @@ export const peerConfig = {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
       ]
     }
   }
@@ -25,12 +35,14 @@ export const peerConfig = {
 
 // Helper function to get full server URL
 export const getPeerServerUrl = () => {
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
   return {
-    host: window.location.hostname,
-    port: peerConfig.SERVER_PORT,
+    host: isLocalhost ? window.location.hostname : peerConfig.SERVER_URL,
+    port: isLocalhost ? window.location.port : peerConfig.SERVER_PORT,
     path: peerConfig.SERVER_PATH,
-    secure: true,
+    secure: !isLocalhost,
     config: peerConfig.CONFIG.config,
-    pingInterval: 3000
+    debug: 3
   };
 };

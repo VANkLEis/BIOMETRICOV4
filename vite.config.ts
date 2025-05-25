@@ -6,16 +6,32 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
-  optimizeDeps: {
-    exclude: ['lucide-react'],
-  },
   server: {
     host: true,
     port: 5173,
-    https: false, // Set to false to allow both HTTP and HTTPS
+    https: true,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
+    }
+  },
+  preview: {
+    port: 4173,
+    https: true,
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+    }
+  },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          peerjs: ['peerjs'],
+        }
+      }
     }
   }
 });
