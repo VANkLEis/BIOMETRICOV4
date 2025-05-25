@@ -30,14 +30,14 @@ const VideoCall: React.FC = () => {
         setConnecting(true);
         setError(null);
 
-        // If there's no roomId in the URL, we're creating a new call, so we're the host
-        const currentHost = !roomId;
-        setIsHost(currentHost);
+        // The user who creates the call (navigates directly to /video-call) is the host
+        const isCreatingCall = !roomId;
+        setIsHost(isCreatingCall);
 
         // Generate unique peer ID
-        const peerId = currentHost 
-          ? roomId || `${user?.id}-${Date.now()}`  // Use existing roomId or generate new one
-          : `guest-${user?.id}-${Date.now()}`;
+        const peerId = isCreatingCall 
+          ? `host-${user?.id}-${Date.now()}`  // Host ID format
+          : `guest-${user?.id}-${Date.now()}`; // Guest ID format
 
         await WebRTCService.initialize(peerId);
         
@@ -66,8 +66,8 @@ const VideoCall: React.FC = () => {
 
         const handlePeerConnected = () => {
           console.log('Peer connected successfully');
-          if (!currentHost && roomId) {
-            console.log('Guest initiating call to:', roomId);
+          if (!isCreatingCall && roomId) {
+            console.log('Guest initiating call to host:', roomId);
             WebRTCService.callPeer(roomId);
           }
         };
@@ -116,8 +116,9 @@ const VideoCall: React.FC = () => {
   };
 
   const copyRoomLink = () => {
-    if (roomId) {
-      const link = `${window.location.origin}/video-call/${roomId}`;
+    const currentRoomId = WebRTCService.getCurrentPeerId();
+    if (currentRoomId) {
+      const link = `${window.location.origin}/video-call/${currentRoomId}`;
       navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -203,7 +204,7 @@ const VideoCall: React.FC = () => {
                     <input
                       type="text"
                       readOnly
-                      value={`${window.location.origin}/video-call/${roomId}`}
+                      value={`${window.location.origin}/video-call/${WebRTCService.getCurrentPeerId()}`}
                       className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
                     />
                     <button
