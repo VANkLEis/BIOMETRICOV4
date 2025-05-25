@@ -18,6 +18,7 @@ const VideoCall: React.FC = () => {
   const [scanType, setScanType] = useState<'face' | 'hand' | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [isHost, setIsHost] = useState(false);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -25,7 +26,16 @@ const VideoCall: React.FC = () => {
   useEffect(() => {
     const initializeCall = async () => {
       try {
-        await WebRTCService.initialize(`${user?.id}-${Date.now()}`);
+        // If we have a roomId in the URL, we're a guest
+        // If not, we're the host creating a new room
+        const isHost = !roomId;
+        setIsHost(isHost);
+
+        // Initialize WebRTC with a unique ID
+        const peerId = isHost ? `${user?.id}-${Date.now()}` : `${user?.id}-guest-${Date.now()}`;
+        await WebRTCService.initialize(peerId);
+        
+        // Get and set local stream
         const stream = await WebRTCService.getLocalStream();
         setLocalStream(stream);
         
@@ -33,20 +43,32 @@ const VideoCall: React.FC = () => {
           localVideoRef.current.srcObject = stream;
         }
 
-        // Handle incoming remote stream
-        window.addEventListener('remoteStream', ((event: CustomEvent) => {
+        // Set up event listeners
+        const handleRemoteStream = (event: CustomEvent) => {
           const stream = event.detail;
           setRemoteStream(stream);
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = stream;
           }
-        }) as EventListener);
+        };
 
-        // If we have a roomId, we're joining a call
+        const handlePeerError = (event: CustomEvent) => {
+          setError(event.detail.message);
+        };
+
+        window.addEventListener('remoteStream', handleRemoteStream as EventListener);
+        window.addEventListener('peerError', handlePeerError as EventListener);
+
+        // If we're a guest, initiate the call to the host
         if (roomId) {
+          console.log('Joining room:', roomId);
           await WebRTCService.callPeer(roomId);
         }
 
+        return () => {
+          window.removeEventListener('remoteStream', handleRemoteStream as EventListener);
+          window.removeEventListener('peerError', handlePeerError as EventListener);
+        };
       } catch (err) {
         console.error('Error initializing call:', err);
         setError('Failed to initialize video call');
@@ -142,33 +164,47 @@ const VideoCall: React.FC = () => {
               <VideoOff className="h-16 w-16 text-gray-400" />
             </div>
           )}
+          <div className="absolute top-4 left-4 bg-black bg-opacity-50 px-3 py-1 rounded-full text-white text-sm">
+            {isHost ? 'Host' : 'Guest'}
+          </div>
         </div>
 
         <div className="w-1/2 relative bg-black">
           {remoteStream ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
+            <>
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-4 left-4 bg-black bg-opacity-50 px-3 py-1 rounded-full text-white text-sm">
+                {isHost ? 'Guest' : 'Host'}
+              </div>
+            </>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800 p-6">
-              <h3 className="text-xl text-white mb-4">Share this link to invite someone</h3>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={`${window.location.origin}/video-call/${WebRTCService.getCurrentPeerId()}`}
-                  className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
-                />
-                <button
-                  onClick={copyRoomLink}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md flex items-center"
-                >
-                  {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
-                </button>
-              </div>
+              {isHost ? (
+                <>
+                  <h3 className="text-xl text-white mb-4">Share this link to invite someone</h3>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/video-call/${WebRTCService.getCurrentPeerId()}`}
+                      className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
+                    />
+                    <button
+                      onClick={copyRoomLink}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md flex items-center"
+                    >
+                      {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <h3 className="text-xl text-white">Connecting to host...</h3>
+              )}
             </div>
           )}
 

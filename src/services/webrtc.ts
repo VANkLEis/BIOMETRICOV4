@@ -1,11 +1,9 @@
-import SimplePeer from 'simple-peer';
+import { Peer } from 'peerjs';
 import { getPeerServerUrl } from '../config/peer.config';
-import Peer from 'peerjs';
 
 class WebRTCService {
   private static instance: WebRTCService;
   private peer: Peer | null = null;
-  private connections: Map<string, SimplePeer.Instance> = new Map();
   private localStream: MediaStream | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
@@ -31,57 +29,78 @@ class WebRTCService {
       // Initialize PeerJS connection
       this.peer = new Peer(userId, getPeerServerUrl());
 
-      this.peer.on('open', (id) => {
-        console.log('Connected to PeerJS server with ID:', id);
-        // Reset reconnect attempts on successful connection
-        this.reconnectAttempts = 0;
-        
-        // Dispatch connection success event
-        const event = new CustomEvent('peerConnected', { detail: { id } });
-        window.dispatchEvent(event);
-      });
-
-      this.peer.on('call', async (call) => {
-        try {
-          if (!this.localStream) {
-            await this.getLocalStream();
-          }
-          
-          if (this.localStream) {
-            call.answer(this.localStream);
-            
-            call.on('stream', (remoteStream) => {
-              const event = new CustomEvent('remoteStream', { detail: remoteStream });
-              window.dispatchEvent(event);
-            });
-          }
-        } catch (err) {
-          console.error('Error handling incoming call:', err);
-          this.dispatchError('Failed to handle incoming call');
-        }
-      });
-
-      this.peer.on('error', (err) => {
-        console.error('PeerJS error:', err);
-        this.handlePeerError(err);
-      });
-
-      this.peer.on('disconnected', () => {
-        console.log('Disconnected from PeerJS server, attempting to reconnect...');
-        this.handleDisconnection();
-      });
-
-      // Add connection closed handler
-      this.peer.on('close', () => {
-        console.log('PeerJS connection closed');
-        this.handleDisconnection();
-      });
+      this.setupPeerEventHandlers();
 
     } catch (err) {
       console.error('Error initializing WebRTC service:', err);
       this.dispatchError('Failed to initialize WebRTC service');
       throw err;
     }
+  }
+
+  private setupPeerEventHandlers(): void {
+    if (!this.peer) return;
+
+    this.peer.on('open', (id) => {
+      console.log('Connected to PeerJS server with ID:', id);
+      this.reconnectAttempts = 0;
+      
+      const event = new CustomEvent('peerConnected', { detail: { id } });
+      window.dispatchEvent(event);
+    });
+
+    this.peer.on('call', async (call) => {
+      try {
+        console.log('Receiving call from:', call.peer);
+        
+        if (!this.localStream) {
+          await this.getLocalStream();
+        }
+        
+        if (this.localStream) {
+          // Answer the call with our local stream
+          call.answer(this.localStream);
+          
+          // Handle the remote stream when we receive it
+          call.on('stream', (remoteStream) => {
+            console.log('Received remote stream');
+            const event = new CustomEvent('remoteStream', { detail: remoteStream });
+            window.dispatchEvent(event);
+          });
+
+          // Handle call errors
+          call.on('error', (err) => {
+            console.error('Call error:', err);
+            this.dispatchError('Error during call');
+          });
+
+          // Handle call close
+          call.on('close', () => {
+            console.log('Call closed');
+            const event = new CustomEvent('callEnded');
+            window.dispatchEvent(event);
+          });
+        }
+      } catch (err) {
+        console.error('Error handling incoming call:', err);
+        this.dispatchError('Failed to handle incoming call');
+      }
+    });
+
+    this.peer.on('error', (err) => {
+      console.error('PeerJS error:', err);
+      this.handlePeerError(err);
+    });
+
+    this.peer.on('disconnected', () => {
+      console.log('Disconnected from PeerJS server, attempting to reconnect...');
+      this.handleDisconnection();
+    });
+
+    this.peer.on('close', () => {
+      console.log('PeerJS connection closed');
+      this.handleDisconnection();
+    });
   }
 
   private dispatchError(message: string): void {
@@ -92,7 +111,6 @@ class WebRTCService {
   }
 
   private handlePeerError(error: any): void {
-    // Dispatch error event
     this.dispatchError(error.message || 'PeerJS connection error');
 
     if (this.peer) {
@@ -113,7 +131,6 @@ class WebRTCService {
     if (!this.reconnectTimeout && this.userId) {
       this.reconnectAttempts++;
       
-      // Clear existing timeout if any
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
       }
@@ -126,7 +143,6 @@ class WebRTCService {
           this.reconnectTimeout = null;
         } catch (err) {
           console.error('Reconnection failed:', err);
-          // If reconnection fails, try again with exponential backoff
           const backoffTime = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
           this.reconnectTimeout = setTimeout(() => this.handleDisconnection(), backoffTime);
         }
@@ -140,7 +156,6 @@ class WebRTCService {
         return this.localStream;
       }
 
-      // Stop any existing stream
       if (this.localStream) {
         this.localStream.getTracks().forEach(track => track.stop());
         this.localStream = null;
@@ -174,9 +189,11 @@ class WebRTCService {
         throw new Error('Service not properly initialized');
       }
 
+      console.log('Calling peer:', peerId);
       const call = this.peer.call(peerId, this.localStream);
       
       call.on('stream', (remoteStream) => {
+        console.log('Received remote stream from call');
         const event = new CustomEvent('remoteStream', { detail: remoteStream });
         window.dispatchEvent(event);
       });
@@ -204,9 +221,6 @@ class WebRTCService {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
     }
-
-    this.connections.forEach(connection => connection.destroy());
-    this.connections.clear();
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);

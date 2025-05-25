@@ -1,7 +1,7 @@
 // PeerJS server configuration
 export const peerConfig = {
   // PeerJS server configuration for production
-  SERVER_URL: 'securecall-signaling.onrender.com',
+  SERVER_URL: 'secure-call-cmdy.onrender.com',
   SERVER_PORT: 443,
   SERVER_PATH: '/peerjs',
   
@@ -9,11 +9,11 @@ export const peerConfig = {
   CONFIG: {
     debug: 3,
     secure: true,
-    host: 'securecall-signaling.onrender.com',
+    host: 'secure-call-cmdy.onrender.com',
     port: 443,
     path: '/peerjs',
-    pingInterval: 5000, // Add periodic ping to keep connection alive
-    retryTimer: 5000,   // Retry connection every 5 seconds
+    pingInterval: 5000,
+    retryTimer: 5000,
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -39,11 +39,17 @@ export const peerConfig = {
 export const getPeerServerUrl = () => {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
+  // Use environment variables if available, otherwise fall back to config
+  const host = import.meta.env.VITE_PEER_HOST || (isLocalhost ? window.location.hostname : peerConfig.SERVER_URL);
+  const port = parseInt(import.meta.env.VITE_PEER_PORT as string) || (isLocalhost ? parseInt(window.location.port) : peerConfig.SERVER_PORT);
+  const path = import.meta.env.VITE_PEER_PATH || peerConfig.SERVER_PATH;
+  const secure = import.meta.env.VITE_PEER_SECURE === 'true' || !isLocalhost;
+
   return {
-    host: isLocalhost ? window.location.hostname : peerConfig.SERVER_URL,
-    port: isLocalhost ? window.location.port : peerConfig.SERVER_PORT,
-    path: peerConfig.SERVER_PATH,
-    secure: !isLocalhost,
+    host,
+    port,
+    path,
+    secure,
     config: peerConfig.CONFIG.config,
     debug: 3,
     pingInterval: peerConfig.CONFIG.pingInterval,
