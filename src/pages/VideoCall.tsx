@@ -19,6 +19,7 @@ const VideoCall: React.FC = () => {
   const [scanProgress, setScanProgress] = useState(0);
   const [copied, setCopied] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [connecting, setConnecting] = useState(true);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -26,6 +27,9 @@ const VideoCall: React.FC = () => {
   useEffect(() => {
     const initializeCall = async () => {
       try {
+        setConnecting(true);
+        setError(null);
+
         // If we have a roomId in the URL, we're a guest
         // If not, we're the host creating a new room
         const isHost = !roomId;
@@ -45,6 +49,7 @@ const VideoCall: React.FC = () => {
 
         // Set up event listeners
         const handleRemoteStream = (event: CustomEvent) => {
+          setConnecting(false);
           const stream = event.detail;
           setRemoteStream(stream);
           if (remoteVideoRef.current) {
@@ -53,25 +58,31 @@ const VideoCall: React.FC = () => {
         };
 
         const handlePeerError = (event: CustomEvent) => {
+          setConnecting(false);
           setError(event.detail.message);
+        };
+
+        const handlePeerConnected = () => {
+          console.log('Peer connected successfully');
+          if (!isHost && roomId) {
+            console.log('Guest initiating call to:', roomId);
+            WebRTCService.callPeer(roomId);
+          }
         };
 
         window.addEventListener('remoteStream', handleRemoteStream as EventListener);
         window.addEventListener('peerError', handlePeerError as EventListener);
-
-        // If we're a guest, initiate the call to the host
-        if (roomId) {
-          console.log('Joining room:', roomId);
-          await WebRTCService.callPeer(roomId);
-        }
+        window.addEventListener('peerConnected', handlePeerConnected as EventListener);
 
         return () => {
           window.removeEventListener('remoteStream', handleRemoteStream as EventListener);
           window.removeEventListener('peerError', handlePeerError as EventListener);
+          window.removeEventListener('peerConnected', handlePeerConnected as EventListener);
         };
       } catch (err) {
         console.error('Error initializing call:', err);
         setError('Failed to initialize video call');
+        setConnecting(false);
       }
     };
 
@@ -165,7 +176,7 @@ const VideoCall: React.FC = () => {
             </div>
           )}
           <div className="absolute top-4 left-4 bg-black bg-opacity-50 px-3 py-1 rounded-full text-white text-sm">
-            {isHost ? 'Host' : 'Guest'}
+            You ({isHost ? 'Host' : 'Guest'})
           </div>
         </div>
 
@@ -203,7 +214,12 @@ const VideoCall: React.FC = () => {
                   </div>
                 </>
               ) : (
-                <h3 className="text-xl text-white">Connecting to host...</h3>
+                <div className="flex flex-col items-center">
+                  <h3 className="text-xl text-white mb-4">Connecting to host...</h3>
+                  {connecting && (
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  )}
+                </div>
               )}
             </div>
           )}
