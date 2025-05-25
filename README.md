@@ -1,77 +1,77 @@
-# SecureCall - Video Call Application
+# SecureCall - Aplicación de Videollamadas
 
-A secure video calling application built with React, Vite, and PeerJS.
+Una aplicación segura de videollamadas construida con React, Vite y PeerJS.
 
-## Project Structure
+## Estructura del Proyecto
 
 ```
 /
-├── client/          # Frontend React application
-└── server/          # PeerJS signaling server
+├── client/          # Aplicación frontend en React
+└── server/          # Servidor de señalización PeerJS
 ```
 
-## Local Development
+## Desarrollo Local
 
-### Frontend Setup
+### Configuración del Frontend
 
-1. Install dependencies:
+1. Instalar dependencias:
 ```bash
 npm install
 ```
 
-2. Start the development server:
+2. Iniciar el servidor de desarrollo:
 ```bash
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`
+El frontend estará disponible en `http://localhost:5173`
 
-### Backend Setup
+### Configuración del Backend
 
-1. Navigate to the server directory:
+1. Navegar al directorio del servidor:
 ```bash
 cd server
 ```
 
-2. Install dependencies:
+2. Instalar dependencias:
 ```bash
 npm install
 ```
 
-3. Start the PeerJS server:
+3. Iniciar el servidor PeerJS:
 ```bash
 npm run dev
 ```
 
-The PeerJS server will be running at `http://localhost:3000`
+El servidor PeerJS estará ejecutándose en `http://localhost:3000`
 
-## Deployment
+## Despliegue
 
-### Frontend Deployment
+### Despliegue del Frontend
 
-The frontend can be deployed to any static hosting service (Netlify, Vercel, etc.).
+El frontend puede ser desplegado en cualquier servicio de alojamiento estático (Netlify, Vercel, etc.).
 
-1. Build the frontend:
+1. Construir el frontend:
 ```bash
 npm run build
 ```
 
-2. Deploy the `dist` directory
+2. Desplegar el directorio `dist`
 
-### Backend Deployment (Render.com)
+### Despliegue del Backend (Render.com)
 
-1. Create a new Web Service on Render
-2. Connect your GitHub repository
-3. Configure the service:
-   - Root Directory: `server`
-   - Build Command: `npm install`
-   - Start Command: `npm start`
-   - Environment Variables:
+1. Crear un nuevo Servicio Web en Render
+2. Conectar tu repositorio de GitHub
+3. Configurar el servicio:
+   - Directorio Raíz: `server`
+   - Comando de Construcción: `npm install`
+   - Comando de Inicio: `npm start`
+   - Variables de Entorno:
      - `PORT`: 3000
 
-### Environment Variables
+### Variables de Entorno
 
-Create a `.env` file in the root directory with the following variables:
+Crear un archivo `.env` en el directorio raíz con las siguientes variables:
 
 ```env
 VITE_PEER_HOST=localhost
@@ -80,31 +80,48 @@ VITE_PEER_PATH=/peerjs
 VITE_PEER_SECURE=false
 ```
 
-For production, update the values in `.env.production`:
+Para producción, actualizar los valores en `.env.production`:
 
 ```env
-VITE_PEER_HOST=your-app.onrender.com
+VITE_PEER_HOST=tu-app.onrender.com
 VITE_PEER_PORT=443
 VITE_PEER_PATH=/peerjs
 VITE_PEER_SECURE=true
 ```
 
-## Testing
+## Pruebas
 
-1. For local testing between devices on the same network:
-   - Use the local IP address of your computer
-   - Both devices must be on the same network
-   - Access via `http://local-ip:5173`
+1. Para pruebas locales entre dispositivos en la misma red:
+   - Usar la dirección IP local de tu computadora
+   - Ambos dispositivos deben estar en la misma red
+   - Acceder vía `http://ip-local:5173`
 
-2. For testing with external devices:
-   - Deploy the backend to Render.com
-   - Update the frontend environment variables
-   - Deploy the frontend
-   - Access via HTTPS
+2. Para pruebas con dispositivos externos:
+   - Desplegar el backend en Render.com
+   - Actualizar las variables de entorno del frontend
+   - Desplegar el frontend
+   - Acceder vía HTTPS
 
-## Important Notes
+## Notas Importantes
 
-- WebRTC requires HTTPS in production
-- Local development can use HTTP
-- Mobile devices require HTTPS unless using localhost
-- The PeerJS server must be running for video calls to work
+- WebRTC requiere HTTPS en producción
+- El desarrollo local puede usar HTTP
+- Los dispositivos móviles requieren HTTPS a menos que se use localhost
+- El servidor PeerJS debe estar ejecutándose para que las videollamadas funcionen
+
+## Solución de Problemas Comunes
+
+1. Error de Cámara o Micrófono:
+   - Verificar que el navegador tiene permisos de acceso
+   - Asegurarse de que ninguna otra aplicación esté usando la cámara
+   - En móviles, verificar los permisos del sistema
+
+2. Problemas de Conexión:
+   - Verificar que ambos usuarios tienen buena conexión a internet
+   - Asegurarse de que el servidor PeerJS está activo
+   - Comprobar que las variables de entorno son correctas
+
+3. Errores de HTTPS:
+   - En producción, asegurarse de usar HTTPS
+   - Para desarrollo local, aceptar los certificados autofirmados
+   - En móviles, usar siempre HTTPS excepto para localhost
