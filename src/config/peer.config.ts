@@ -12,6 +12,8 @@ export const peerConfig = {
     host: 'securecall-signaling.onrender.com',
     port: 443,
     path: '/peerjs',
+    pingInterval: 5000, // Add periodic ping to keep connection alive
+    retryTimer: 5000,   // Retry connection every 5 seconds
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -43,6 +45,8 @@ export const getPeerServerUrl = () => {
     path: peerConfig.SERVER_PATH,
     secure: !isLocalhost,
     config: peerConfig.CONFIG.config,
-    debug: 3
+    debug: 3,
+    pingInterval: peerConfig.CONFIG.pingInterval,
+    retryTimer: peerConfig.CONFIG.retryTimer
   };
 };
