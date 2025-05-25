@@ -40,10 +40,10 @@ export const getPeerServerUrl = () => {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
   // Use environment variables if available, otherwise fall back to config
-  const host = import.meta.env.VITE_PEER_HOST || (isLocalhost ? window.location.hostname : peerConfig.SERVER_URL);
-  const port = parseInt(import.meta.env.VITE_PEER_PORT as string) || (isLocalhost ? parseInt(window.location.port) : peerConfig.SERVER_PORT);
+  const host = isLocalhost ? window.location.hostname : (import.meta.env.VITE_PEER_HOST || peerConfig.SERVER_URL);
+  const port = isLocalhost ? 3000 : (parseInt(import.meta.env.VITE_PEER_PORT as string) || peerConfig.SERVER_PORT);
   const path = import.meta.env.VITE_PEER_PATH || peerConfig.SERVER_PATH;
-  const secure = import.meta.env.VITE_PEER_SECURE === 'true' || !isLocalhost;
+  const secure = isLocalhost ? false : (import.meta.env.VITE_PEER_SECURE === 'true' || true);
 
   console.log('PeerJS Configuration:', { host, port, path, secure });
 
@@ -54,7 +54,7 @@ export const getPeerServerUrl = () => {
     secure,
     config: peerConfig.CONFIG.config,
     debug: 3,
-    pingInterval: peerConfig.CONFIG.pingInterval,
-    retryTimer: peerConfig.CONFIG.retryTimer
+    pingInterval: 5000,
+    retryTimer: 5000
   };
 };

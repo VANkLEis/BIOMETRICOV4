@@ -8,7 +8,11 @@ config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 const server = app.listen(port, () => {
   console.log(`PeerJS server running on port ${port}`);
@@ -20,6 +24,7 @@ const peerServer = ExpressPeerServer(server, {
   proxied: true,
   debug: true,
   pingInterval: 5000,
+  ssl: false
 });
 
 app.use('/', peerServer);
