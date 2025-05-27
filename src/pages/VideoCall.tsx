@@ -4,8 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
 import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Scan, Hand, Copy, Check } from 'lucide-react';
 import WebRTCService from '../services/webrtc';
-import { v4 as uuidv4 } from 'uuid';
 import RoleSelector from '../components/RoleSelector';
+import { RoomService } from '../services/roomApi';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
@@ -25,15 +25,18 @@ const VideoCall: React.FC = () => {
   const [connecting, setConnecting] = useState(true);
   const [currentRoomId, setCurrentRoomId] = useState<string>('');
   const [showRoleSelector, setShowRoleSelector] = useState(true);
+  const [hostId, setHostId] = useState<string | null>(null);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    // Reset role when component mounts
     setRole(null);
     return () => {
       WebRTCService.disconnect();
+      if (currentRoomId && role === 'host') {
+        RoomService.deleteRoom(currentRoomId).catch(console.error);
+      }
       setRole(null);
     };
   }, []);
@@ -46,18 +49,9 @@ const VideoCall: React.FC = () => {
         setConnecting(true);
         setError(null);
 
-        // Generate or use room ID based on role
-        const newRoomId = role === 'host' ? uuidv4() : roomId;
-        if (!newRoomId && role === 'guest') {
-          throw new Error('Room ID is required for guests');
-        }
-        setCurrentRoomId(newRoomId!);
-
-        // Initialize WebRTC with appropriate peer ID
-        const peerId = role === 'host' ? newRoomId : `guest-${user?.id}-${Date.now()}`;
+        const peerId = `${role}-${user?.id}-${Date.now()}`;
         await WebRTCService.initialize(peerId);
         
-        // Get and set local stream
         const stream = await WebRTCService.getLocalStream();
         setLocalStream(stream);
         
@@ -65,12 +59,17 @@ const VideoCall: React.FC = () => {
           localVideoRef.current.srcObject = stream;
         }
 
-        // If user is a guest, initiate call to host
-        if (role === 'guest' && roomId) {
-          WebRTCService.callPeer(roomId);
+        if (role === 'host') {
+          const { roomId: newRoomId } = await RoomService.createRoom(peerId);
+          setCurrentRoomId(newRoomId);
+          setHostId(peerId);
+        } else if (role === 'guest' && roomId) {
+          const { hostId: remoteHostId } = await RoomService.joinRoom(roomId, peerId);
+          setHostId(remoteHostId);
+          setCurrentRoomId(roomId);
+          WebRTCService.callPeer(remoteHostId);
         }
 
-        // Set up event listeners
         const handleRemoteStream = (event: CustomEvent) => {
           setConnecting(false);
           const stream = event.detail;
@@ -135,6 +134,14 @@ const VideoCall: React.FC = () => {
     }
   };
 
+  const copyRoomCode = () => {
+    if (currentRoomId) {
+      navigator.clipboard.writeText(currentRoomId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   const startScanning = (type: 'face' | 'hand') => {
     if (isScanning) return;
     
@@ -158,7 +165,10 @@ const VideoCall: React.FC = () => {
     }, 50);
   };
 
-  const endCall = () => {
+  const endCall = async () => {
+    if (currentRoomId && role === 'host') {
+      await RoomService.deleteRoom(currentRoomId);
+    }
     WebRTCService.disconnect();
     setRole(null);
     navigate('/dashboard');
@@ -214,20 +224,43 @@ const VideoCall: React.FC = () => {
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800 p-6">
               {role === 'host' ? (
                 <>
-                  <h3 className="text-xl text-white mb-4">Share this link to invite someone</h3>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/video-call/${currentRoomId}`}
-                      className="bg-gray-700 text-white px-4 py-2 rounded-l-md w-96"
-                    />
-                    <button
-                      onClick={copyRoomLink}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md flex items-center"
-                    >
-                      {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
-                    </button>
+                  <h3 className="text-xl text-white mb-4">Share this information to invite someone</h3>
+                  <div className="space-y-4 w-full max-w-md">
+                    <div className="bg-gray-700 p-4 rounded-lg">
+                      <p className="text-sm text-gray-300 mb-2">Room Link:</p>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${window.location.origin}/video-call/${currentRoomId}`}
+                          className="bg-gray-600 text-white px-4 py-2 rounded-l-md w-full"
+                        />
+                        <button
+                          onClick={copyRoomLink}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md flex items-center"
+                        >
+                          {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-700 p-4 rounded-lg">
+                      <p className="text-sm text-gray-300 mb-2">Room Code:</p>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={currentRoomId}
+                          className="bg-gray-600 text-white px-4 py-2 rounded-l-md w-full font-mono"
+                        />
+                        <button
+                          onClick={copyRoomCode}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md flex items-center"
+                        >
+                          {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </>
               ) : (
