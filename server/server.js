@@ -45,13 +45,30 @@ app.get('/health', (req, res) => {
 
 // Clear inactive peers periodically
 setInterval(() => {
-  const clients = peerServer._clients;
-  const now = Date.now();
-  for (const [id, client] of Object.entries(clients.clients)) {
-    if (now - client.getLastPing() > 10000) { // 10 seconds
-      client.getSocket()?.close();
-      clients.delete(id);
+  try {
+    const clients = peerServer._clients;
+    if (!clients) return;
+
+    const now = Date.now();
+    const clientIds = Array.from(clients.keys());
+
+    for (const id of clientIds) {
+      const client = clients.get(id);
+      if (client && now - client.getLastPing() > 10000) { // 10 seconds
+        try {
+          const socket = client.getSocket();
+          if (socket) {
+            socket.close();
+          }
+          clients.delete(id);
+          console.log(`Cleaned up inactive client: ${id}`);
+        } catch (err) {
+          console.error(`Error cleaning up client ${id}:`, err);
+        }
+      }
     }
+  } catch (err) {
+    console.error('Error in cleanup interval:', err);
   }
 }, 5000);
 
