@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_ROOM_API_URL || 'https://secure-call-cmdy.onrender.com';
+const API_URL = import.meta.env.VITE_ROOM_API_URL || (
+  window.location.hostname === 'localhost' ? 
+  'http://localhost:3000' : 
+  'https://secure-call-cmdy.onrender.com'
+);
 
 interface CreateRoomResponse {
   roomId: string;
@@ -22,40 +26,57 @@ interface RoomInfo {
 export const RoomService = {
   async createRoom(hostId: string): Promise<CreateRoomResponse> {
     try {
-      const response = await axios.post(`${API_URL}/rooms`, { hostId });
+      const response = await axios.post(`${API_URL}/rooms`, { hostId }, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
       return response.data;
-    } catch (error) {
-      console.error('Error creating room:', error);
-      throw new Error('Failed to create room');
+    } catch (error: any) {
+      console.error('Error creating room:', error.response || error);
+      throw new Error(error.response?.data?.message || 'Failed to create room');
     }
   },
 
   async joinRoom(roomId: string, peerId: string): Promise<JoinRoomResponse> {
     try {
-      const response = await axios.post(`${API_URL}/rooms/${roomId}/join`, { peerId });
+      const response = await axios.post(`${API_URL}/rooms/${roomId}/join`, 
+        { peerId },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
+      );
       return response.data;
-    } catch (error) {
-      console.error('Error joining room:', error);
-      throw new Error('Failed to join room');
+    } catch (error: any) {
+      console.error('Error joining room:', error.response || error);
+      throw new Error(error.response?.data?.message || 'Failed to join room');
     }
   },
 
   async getRoomInfo(roomId: string): Promise<RoomInfo> {
     try {
-      const response = await axios.get(`${API_URL}/rooms/${roomId}`);
+      const response = await axios.get(`${API_URL}/rooms/${roomId}`, {
+        withCredentials: true
+      });
       return response.data;
-    } catch (error) {
-      console.error('Error getting room info:', error);
-      throw new Error('Room not found');
+    } catch (error: any) {
+      console.error('Error getting room info:', error.response || error);
+      throw new Error(error.response?.data?.message || 'Room not found');
     }
   },
 
   async deleteRoom(roomId: string): Promise<void> {
     try {
-      await axios.delete(`${API_URL}/rooms/${roomId}`);
-    } catch (error) {
-      console.error('Error deleting room:', error);
-      throw new Error('Failed to delete room');
+      await axios.delete(`${API_URL}/rooms/${roomId}`, {
+        withCredentials: true
+      });
+    } catch (error: any) {
+      console.error('Error deleting room:', error.response || error);
+      throw new Error(error.response?.data?.message || 'Failed to delete room');
     }
   }
 };

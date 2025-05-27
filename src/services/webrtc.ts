@@ -19,6 +19,12 @@ class WebRTCService {
     return WebRTCService.instance;
   }
 
+  private generateUniqueId(userId: string): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `${userId}-${timestamp}-${random}`;
+  }
+
   async initialize(userId: string): Promise<void> {
     try {
       this.userId = userId;
@@ -26,8 +32,17 @@ class WebRTCService {
       // Get local stream first
       await this.getLocalStream();
 
-      // Initialize PeerJS connection
-      this.peer = new Peer(userId, getPeerServerUrl());
+      // Generate a unique peer ID
+      const uniqueId = this.generateUniqueId(userId);
+
+      // Cleanup existing peer if any
+      if (this.peer) {
+        this.peer.destroy();
+        this.peer = null;
+      }
+
+      // Initialize PeerJS connection with unique ID
+      this.peer = new Peer(uniqueId, getPeerServerUrl());
 
       this.setupPeerEventHandlers();
 
@@ -58,23 +73,19 @@ class WebRTCService {
         }
         
         if (this.localStream) {
-          // Answer the call with our local stream
           call.answer(this.localStream);
           
-          // Handle the remote stream when we receive it
           call.on('stream', (remoteStream) => {
             console.log('Received remote stream');
             const event = new CustomEvent('remoteStream', { detail: remoteStream });
             window.dispatchEvent(event);
           });
 
-          // Handle call errors
           call.on('error', (err) => {
             console.error('Call error:', err);
             this.dispatchError('Error during call');
           });
 
-          // Handle call close
           call.on('close', () => {
             console.log('Call closed');
             const event = new CustomEvent('callEnded');
@@ -111,7 +122,20 @@ class WebRTCService {
   }
 
   private handlePeerError(error: any): void {
-    this.dispatchError(error.message || 'PeerJS connection error');
+    if (error.type === 'peer-unavailable') {
+      this.dispatchError('The peer you are trying to connect to is not available');
+    } else if (error.type === 'invalid-id') {
+      this.dispatchError('Invalid peer ID');
+    } else if (error.type === 'invalid-key') {
+      this.dispatchError('Invalid API key');
+    } else if (error.type === 'unavailable-id') {
+      // Retry with a new ID
+      if (this.userId) {
+        this.initialize(this.userId).catch(console.error);
+      }
+    } else {
+      this.dispatchError(error.message || 'PeerJS connection error');
+    }
 
     if (this.peer) {
       this.peer.destroy();
@@ -135,6 +159,9 @@ class WebRTCService {
         clearTimeout(this.reconnectTimeout);
       }
 
+      const backoffTime = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+      const jitter = Math.random() * 1000; // Add random jitter to prevent thundering herd
+
       this.reconnectTimeout = setTimeout(async () => {
         console.log(`Reconnection attempt ${this.reconnectAttempts} of ${this.maxReconnectAttempts}`);
         
@@ -143,10 +170,9 @@ class WebRTCService {
           this.reconnectTimeout = null;
         } catch (err) {
           console.error('Reconnection failed:', err);
-          const backoffTime = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-          this.reconnectTimeout = setTimeout(() => this.handleDisconnection(), backoffTime);
+          this.handleDisconnection();
         }
-      }, 5000);
+      }, backoffTime + jitter);
     }
   }
 
