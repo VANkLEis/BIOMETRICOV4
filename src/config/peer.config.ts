@@ -12,8 +12,8 @@ export const peerConfig = {
     host: 'secure-call-cmdy.onrender.com',
     port: 443,
     path: '/peerjs',
-    pingInterval: 5000,
-    retryTimer: 5000,
+    pingInterval: 3000, // Reduced ping interval for faster connection loss detection
+    retryTimer: 3000,   // Reduced retry timer for faster reconnection
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -39,13 +39,6 @@ export const peerConfig = {
 export const getPeerServerUrl = () => {
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
-  // Use environment variables if available, otherwise fall back to config
-  const host = import.meta.env.VITE_PEER_HOST || peerConfig.SERVER_URL;
-  const port = parseInt(import.meta.env.VITE_PEER_PORT as string) || peerConfig.SERVER_PORT;
-  const path = import.meta.env.VITE_PEER_PATH || peerConfig.SERVER_PATH;
-  const secure = import.meta.env.VITE_PEER_SECURE === 'true' || true;
-
-  // Always use HTTPS in production
   if (!isLocalhost) {
     return {
       host: 'secure-call-cmdy.onrender.com',
@@ -54,19 +47,20 @@ export const getPeerServerUrl = () => {
       secure: true,
       config: peerConfig.CONFIG.config,
       debug: 3,
-      pingInterval: 5000,
-      retryTimer: 5000
+      pingInterval: 3000,
+      retryTimer: 3000
     };
   }
 
+  // Development configuration
   return {
-    host,
-    port,
-    path,
-    secure,
+    host: 'localhost',
+    port: 3000,
+    path: '/peerjs',
+    secure: false,
     config: peerConfig.CONFIG.config,
     debug: 3,
-    pingInterval: 5000,
-    retryTimer: 5000
+    pingInterval: 3000,
+    retryTimer: 3000
   };
 };
