@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_ROOM_API_URL || (
   window.location.hostname === 'localhost' ? 
-  'http://localhost:3000' : 
+  'https://localhost:3000' : // Changed from http to https
   'https://secure-call-cmdy.onrender.com'
 );
 
