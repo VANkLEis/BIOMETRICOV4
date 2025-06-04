@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface JitsiRoomProps {
   userName: string;
+  roomId: string;
 }
 
-const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName }) => {
-  const { roomId } = useParams<{ roomId: string }>();
+const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName, roomId }) => {
   const [error, setError] = useState<string | null>(null);
+  const [useDirectLink, setUseDirectLink] = useState(false);
+  const jitsiContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!roomId) return;
@@ -27,9 +28,86 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName }) => {
       }
       return;
     }
+
+    // Try to load Jitsi API
+    if (isSecure || isLocalhost) {
+      loadJitsiAPI();
+    }
   }, [roomId]);
 
-  if (error) {
+  const loadJitsiAPI = () => {
+    // Check if Jitsi API is already loaded
+    if (window.JitsiMeetExternalAPI) {
+      initializeJitsi();
+      return;
+    }
+
+    // Load Jitsi API script
+    const script = document.createElement('script');
+    script.src = 'https://meet.jit.si/external_api.js';
+    script.async = true;
+    script.onload = () => {
+      initializeJitsi();
+    };
+    script.onerror = () => {
+      setError('No se pudo cargar la API de Jitsi Meet. Usando enlace directo.');
+      setUseDirectLink(true);
+    };
+    document.head.appendChild(script);
+  };
+
+  const initializeJitsi = () => {
+    if (!jitsiContainerRef.current || !roomId) return;
+
+    const domain = 'meet.jit.si';
+    const roomName = `securecall-${roomId}`;
+    
+    const options = {
+      roomName: roomName,
+      width: '100%',
+      height: '100%',
+      parentNode: jitsiContainerRef.current,
+      configOverwrite: {
+        prejoinPageEnabled: false,
+        startWithAudioMuted: false,
+        startWithVideoMuted: false,
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        DEFAULT_BACKGROUND: '#040404',
+        TOOLBAR_BUTTONS: [
+          'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+          'fodeviceselection', 'hangup', 'profile', 'info', 'chat', 'recording',
+          'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
+          'videoquality', 'filmstrip', 'invite', 'feedback', 'stats', 'shortcuts',
+          'tileview', 'videobackgroundblur', 'download', 'help', 'mute-everyone'
+        ]
+      },
+      userInfo: {
+        displayName: userName
+      }
+    };
+
+    try {
+      const api = new window.JitsiMeetExternalAPI(domain, options);
+      
+      api.addEventListener('readyToClose', () => {
+        api.dispose();
+      });
+
+      api.addEventListener('videoConferenceJoined', () => {
+        console.log('Usuario se unió a la conferencia');
+      });
+
+    } catch (err) {
+      console.error('Error inicializando Jitsi:', err);
+      setError('Error al inicializar la videollamada. Usando enlace directo.');
+      setUseDirectLink(true);
+    }
+  };
+
+  if (error && !useDirectLink) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 p-6">
         <div className="bg-yellow-900 bg-opacity-50 p-6 rounded-lg max-w-2xl">
@@ -48,6 +126,12 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName }) => {
                   </ul>
                 </div>
               )}
+              <button
+                onClick={() => setUseDirectLink(true)}
+                className="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded transition-colors"
+              >
+                Usar enlace directo
+              </button>
             </div>
           </div>
         </div>
@@ -57,20 +141,45 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName }) => {
 
   const domain = 'meet.jit.si';
   const roomName = `securecall-${roomId}`;
-  const embedDomain = window.location.hostname === 'localhost' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname)
-    ? 'secure-alpha-murex.vercel.app'
-    : window.location.hostname;
+  const directLink = `https://${domain}/${roomName}#userInfo.displayName="${encodeURIComponent(userName)}"`;
+
+  if (useDirectLink) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-900 p-6">
+        <div className="bg-blue-900 bg-opacity-50 p-6 rounded-lg max-w-2xl text-center">
+          <h3 className="text-lg font-medium text-blue-300 mb-4">Unirse a la Videollamada</h3>
+          <p className="text-blue-200 mb-6">
+            Haz clic en el botón de abajo para abrir la videollamada en una nueva pestaña:
+          </p>
+          <a
+            href={directLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors"
+          >
+            <ExternalLink className="h-5 w-5 mr-2" />
+            Abrir Videollamada
+          </a>
+          <p className="text-sm text-blue-300 mt-4">
+            Sala: {roomName}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-full">
-      <iframe
-        src={`https://${domain}/${roomName}?embedDomain=${embedDomain}#userInfo.displayName="${userName}"`}
-        allow="camera; microphone; fullscreen; display-capture; clipboard-write"
-        style={{ width: '100%', height: '100%', border: '0' }}
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-      />
+    <div className="w-full h-full bg-gray-900">
+      <div ref={jitsiContainerRef} className="w-full h-full" />
     </div>
   );
 };
+
+// Declare JitsiMeetExternalAPI for TypeScript
+declare global {
+  interface Window {
+    JitsiMeetExternalAPI: any;
+  }
+}
 
 export default JitsiRoom;
