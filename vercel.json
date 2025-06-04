@@ -17,6 +17,10 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; frame-src * 'self' https://meet.jit.si; connect-src * 'self' wss://meet.jit.si:* https://*.meet.jit.si:* https://meet.jit.si:*"
         }
       ]
     }
