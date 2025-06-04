@@ -57,11 +57,14 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName }) => {
 
   const domain = 'meet.jit.si';
   const roomName = `securecall-${roomId}`;
+  const embedDomain = window.location.hostname === 'localhost' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(window.location.hostname)
+    ? 'secure-alpha-murex.vercel.app'
+    : window.location.hostname;
 
   return (
     <div className="w-full h-full">
       <iframe
-        src={`https://${domain}/${roomName}?embedDomain=${window.location.hostname}#userInfo.displayName="${userName}"`}
+        src={`https://${domain}/${roomName}?embedDomain=${embedDomain}#userInfo.displayName="${userName}"`}
         allow="camera; microphone; fullscreen; display-capture; clipboard-write"
         style={{ width: '100%', height: '100%', border: '0' }}
         sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
