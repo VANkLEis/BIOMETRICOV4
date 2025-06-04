@@ -16,7 +16,6 @@ export default defineConfig({
   },
   preview: {
     port: 4173,
-    https: true,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -28,7 +27,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          peerjs: ['peerjs'],
         }
       }
     }
