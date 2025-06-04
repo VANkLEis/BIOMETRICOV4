@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { LogoProvider } from './contexts/LogoContext';
 import { RoleProvider } from './contexts/RoleContext';
+import { VerificationProvider } from './contexts/VerificationContext';
 
 // Pages
 import Login from './pages/Login';
@@ -15,10 +16,10 @@ import Layout from './components/Layout';
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <LogoProvider>
-          <RoleProvider>
+    <AuthProvider>
+      <LogoProvider>
+        <RoleProvider>
+          <VerificationProvider>
             <Routes>
               <Route path="/" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -42,10 +43,10 @@ function App() {
                 />
               </Route>
             </Routes>
-          </RoleProvider>
-        </LogoProvider>
-      </AuthProvider>
-    </Router>
+          </VerificationProvider>
+        </RoleProvider>
+      </LogoProvider>
+    </AuthProvider>
   );
 }
 
