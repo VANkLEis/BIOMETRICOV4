@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { LogoProvider } from './contexts/LogoContext';
 import { RoleProvider } from './contexts/RoleContext';
@@ -16,37 +16,39 @@ import Layout from './components/Layout';
 
 function App() {
   return (
-    <AuthProvider>
-      <LogoProvider>
-        <RoleProvider>
-          <VerificationProvider>
-            <Routes>
-              <Route path="/" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route element={<Layout />}>
-                <Route 
-                  path="/dashboard" 
-                  element={
-                    <ProtectedRoute>
-                      <Dashboard />
-                    </ProtectedRoute>
-                  } 
-                />
-                <Route 
-                  path="/video-call/:roomId?" 
-                  element={
-                    <ProtectedRoute>
-                      <VideoCall />
-                    </ProtectedRoute>
-                  } 
-                />
-              </Route>
-            </Routes>
-          </VerificationProvider>
-        </RoleProvider>
-      </LogoProvider>
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <LogoProvider>
+          <RoleProvider>
+            <VerificationProvider>
+              <Routes>
+                <Route path="/" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route element={<Layout />}>
+                  <Route 
+                    path="/dashboard" 
+                    element={
+                      <ProtectedRoute>
+                        <Dashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/video-call/:roomId?" 
+                    element={
+                      <ProtectedRoute>
+                        <VideoCall />
+                      </ProtectedRoute>
+                    } 
+                  />
+                </Route>
+              </Routes>
+            </VerificationProvider>
+          </RoleProvider>
+        </LogoProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 
