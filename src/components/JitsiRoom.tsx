@@ -1,104 +1,88 @@
 import React, { useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 
-interface JitsiRoomProps {
-  roomId: string;
-  userName: string;
-  width?: string | number;
-  height?: string | number;
+declare global {
+  interface Window {
+    JitsiMeetExternalAPI: any;
+  }
 }
 
-const JitsiRoom: React.FC<JitsiRoomProps> = ({ 
-  roomId, 
-  userName, 
-  width = '100%', 
-  height = '100%' 
-}) => {
+const JITSI_SCRIPT_URL = 'https://meet.jit.si/external_api.js';
+
+const JitsiRoom: React.FC = () => {
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<any>(null);
+  const { roomId } = useParams<{ roomId: string }>();
+  const jitsiApiRef = useRef<any>(null);
+
+  const loadJitsiScript = () => {
+    return new Promise<void>((resolve, reject) => {
+      if (window.JitsiMeetExternalAPI) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = JITSI_SCRIPT_URL;
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(new Error('Error loading Jitsi script'));
+      document.body.appendChild(script);
+    });
+  };
+
+  const initJitsi = async () => {
+    if (!jitsiContainerRef.current) return;
+
+    try {
+      await loadJitsiScript();
+
+      const domain = 'meet.jit.si';
+      const options = {
+        roomName: roomId,
+        width: '100%',
+        height: '100%',
+        parentNode: jitsiContainerRef.current,
+        configOverwrite: {
+          startWithAudioMuted: true,
+          startWithVideoMuted: false,
+          prejoinPageEnabled: false
+        },
+        interfaceConfigOverwrite: {
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          MOBILE_APP_PROMO: false,
+        },
+      };
+
+      jitsiApiRef.current = new window.JitsiMeetExternalAPI(domain, options);
+
+      jitsiApiRef.current.addEventListener('videoConferenceJoined', () => {
+        console.log('User has joined the room');
+      });
+
+      jitsiApiRef.current.addEventListener('videoConferenceLeft', () => {
+        console.log('User has left the room');
+      });
+    } catch (error) {
+      console.error('Failed to initialize Jitsi:', error);
+    }
+  };
 
   useEffect(() => {
-    const loadJitsiScript = () => {
-      return new Promise<void>((resolve, reject) => {
-        if (window.JitsiMeetExternalAPI) {
-          console.log('Jitsi API already loaded');
-          resolve();
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.src = 'https://meet.jit.si/external_api.js';
-        script.async = true;
-        script.onload = () => {
-          console.log('Jitsi script loaded successfully');
-          resolve();
-        };
-        script.onerror = () => {
-          console.error('Error loading Jitsi script');
-          reject(new Error('Failed to load Jitsi script'));
-        };
-        document.body.appendChild(script);
-      });
-    };
-
-    const initJitsi = async () => {
-      try {
-        await loadJitsiScript();
-
-        const domain = 'meet.jit.si';
-        const options = {
-          roomName: roomId,
-          width: width,
-          height: height,
-          parentNode: jitsiContainerRef.current,
-          userInfo: {
-            displayName: userName
-          },
-          configOverwrite: {
-            startWithAudioMuted: false,
-            startWithVideoMuted: false,
-            prejoinPageEnabled: false,
-            disableDeepLinking: true
-          },
-          interfaceConfigOverwrite: {
-            TOOLBAR_BUTTONS: [
-              'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-              'fodeviceselection', 'hangup', 'profile', 'recording',
-              'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
-              'videoquality', 'filmstrip', 'feedback', 'stats', 'shortcuts',
-              'tileview', 'select-background', 'download', 'help', 'mute-everyone'
-            ],
-            SETTINGS_SECTIONS: ['devices', 'language', 'moderator', 'profile', 'calendar'],
-            SHOW_JITSI_WATERMARK: false,
-            SHOW_WATERMARK_FOR_GUESTS: false,
-            DEFAULT_BACKGROUND: '#3c3c3c'
-          }
-        };
-
-        apiRef.current = new window.JitsiMeetExternalAPI(domain, options);
-
-        apiRef.current.addEventListener('videoConferenceJoined', () => {
-          console.log('Local user joined');
-        });
-
-        apiRef.current.addEventListener('participantJoined', () => {
-          console.log('A participant joined');
-        });
-
-      } catch (error) {
-        console.error('Failed to initialize Jitsi:', error);
-      }
-    };
-
     initJitsi();
 
     return () => {
-      if (apiRef.current) {
-        apiRef.current.dispose();
+      if (jitsiApiRef.current) {
+        jitsiApiRef.current.dispose();
       }
     };
-  }, [roomId, userName, width, height]);
+  }, [roomId]);
 
-  return <div ref={jitsiContainerRef} style={{ width, height }} />;
+  return (
+    <div className="w-full h-screen">
+      <div ref={jitsiContainerRef} className="w-full h-full" />
+    </div>
+  );
 };
 
 export default JitsiRoom;
