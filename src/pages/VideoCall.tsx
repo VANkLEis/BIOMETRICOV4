@@ -29,7 +29,7 @@ const VideoCall: React.FC = () => {
   const jitsiContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setRole(null);
+    // Cleanup function
     return () => {
       if (useJitsi) {
         JitsiService.disconnect();
@@ -44,7 +44,7 @@ const VideoCall: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!role || !user) return;
+    if (!role || !user || !jitsiContainerRef.current) return;
 
     const initializeCall = async () => {
       try {
@@ -55,7 +55,7 @@ const VideoCall: React.FC = () => {
           const { roomId: newRoomId } = await RoomService.createRoom(user.id.toString());
           setCurrentRoomId(newRoomId);
 
-          if (useJitsi && jitsiContainerRef.current) {
+          if (useJitsi) {
             await JitsiService.initializeCall(
               newRoomId,
               user.username,
@@ -66,7 +66,7 @@ const VideoCall: React.FC = () => {
           const { hostId } = await RoomService.joinRoom(roomId, user.id.toString());
           setCurrentRoomId(roomId);
 
-          if (useJitsi && jitsiContainerRef.current) {
+          if (useJitsi) {
             await JitsiService.initializeCall(
               roomId,
               user.username,
@@ -172,7 +172,11 @@ const VideoCall: React.FC = () => {
       )}
 
       <div className="flex-1 relative">
-        <div ref={jitsiContainerRef} className="w-full h-full" />
+        <div 
+          ref={jitsiContainerRef} 
+          className="w-full h-full bg-gray-900"
+          style={{ minHeight: '500px' }}
+        />
 
         {connecting && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75">

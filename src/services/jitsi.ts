@@ -14,57 +14,70 @@ class JitsiService {
     return JitsiService.instance;
   }
 
-  initializeCall(roomId: string, displayName: string, container: HTMLElement): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        const options = {
-          roomName: roomId,
-          width: '100%',
-          height: '100%',
-          parentNode: container,
-          userInfo: {
-            displayName
-          },
-          configOverwrite: {
-            startWithAudioMuted: false,
-            startWithVideoMuted: false,
-            prejoinPageEnabled: false
-          },
-          interfaceConfigOverwrite: {
-            TOOLBAR_BUTTONS: [
-              'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-              'fodeviceselection', 'hangup', 'profile', 'recording',
-              'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
-              'videoquality', 'filmstrip', 'feedback', 'stats', 'shortcuts',
-              'tileview', 'select-background', 'download', 'help', 'mute-everyone'
-            ]
-          }
-        };
-
-        this.api = new JitsiMeetExternalAPI(this.domain, options);
-
-        this.api.addEventListener('videoConferenceJoined', () => {
-          console.log('Local user joined');
-          resolve();
-        });
-
-        this.api.addEventListener('participantJoined', () => {
-          console.log('A participant joined');
-        });
-
-        this.api.addEventListener('participantLeft', () => {
-          console.log('A participant left');
-        });
-
-        this.api.addEventListener('videoConferenceLeft', () => {
-          this.disconnect();
-        });
-
-      } catch (error) {
-        console.error('Error initializing Jitsi:', error);
-        reject(error);
+  async initializeCall(roomId: string, displayName: string, container: HTMLElement): Promise<void> {
+    try {
+      // Clean up any existing instance
+      if (this.api) {
+        this.api.dispose();
+        this.api = null;
       }
-    });
+
+      // Wait for the container to be properly mounted
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const options = {
+        roomName: `securecall-${roomId}`, // Add prefix to avoid conflicts
+        width: container.offsetWidth,
+        height: container.offsetHeight,
+        parentNode: container,
+        lang: 'es',
+        userInfo: {
+          displayName
+        },
+        configOverwrite: {
+          startWithAudioMuted: false,
+          startWithVideoMuted: false,
+          prejoinPageEnabled: false,
+          disableDeepLinking: true
+        },
+        interfaceConfigOverwrite: {
+          TOOLBAR_BUTTONS: [
+            'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+            'fodeviceselection', 'hangup', 'profile', 'recording',
+            'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
+            'videoquality', 'filmstrip', 'feedback', 'stats', 'shortcuts',
+            'tileview', 'select-background', 'download', 'help', 'mute-everyone'
+          ],
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          DEFAULT_BACKGROUND: '#111827' // Match the app's dark theme
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        try {
+          this.api = new JitsiMeetExternalAPI(this.domain, options);
+
+          this.api.addEventListener('videoConferenceJoined', () => {
+            console.log('Local user joined');
+            resolve();
+          });
+
+          this.api.addEventListener('error', (error) => {
+            console.error('Jitsi error:', error);
+            reject(error);
+          });
+
+        } catch (error) {
+          console.error('Error creating Jitsi instance:', error);
+          reject(error);
+        }
+      });
+
+    } catch (error) {
+      console.error('Error initializing Jitsi:', error);
+      throw error;
+    }
   }
 
   disconnect(): void {
