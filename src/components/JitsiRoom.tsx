@@ -62,7 +62,8 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({
         configOverwrite: {
           prejoinPageEnabled: false,
           startWithAudioMuted: true,
-          startWithVideoMuted: false
+          startWithVideoMuted: false,
+          disableDeepLinking: true
         },
         interfaceConfigOverwrite: {
           TOOLBAR_BUTTONS: [
@@ -71,7 +72,10 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({
             'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
             'videoquality', 'filmstrip', 'feedback', 'stats', 'shortcuts',
             'tileview', 'select-background', 'download', 'help', 'mute-everyone'
-          ]
+          ],
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          DEFAULT_BACKGROUND: '#111827'
         }
       };
 

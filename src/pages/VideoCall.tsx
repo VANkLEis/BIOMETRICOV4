@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
-import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Scan, Hand, Copy, Check } from 'lucide-react';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, Copy, Check } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
 import JitsiRoom from '../components/JitsiRoom';
 import { v4 as uuidv4 } from 'uuid';
