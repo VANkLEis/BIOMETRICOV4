@@ -7,6 +7,8 @@ interface JitsiRoomProps {
 }
 
 const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName, roomId }) => {
+  const domain = 'meet.jit.si';
+  const roomUrl = `https://${domain}/${roomId}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false`;
   const [error, setError] = useState<string | null>(null);
   const [useDirectLink, setUseDirectLink] = useState(false);
   const [useIframe, setUseIframe] = useState(false);
@@ -213,7 +215,7 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName, roomId }) => {
     return (
       <div className="w-full h-full bg-gray-900">
         <iframe
-          src={`https://meet.jit.si/${roomName}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false`}
+          src={roomUrl}
           allow="camera; microphone; fullscreen; display-capture; clipboard-write; autoplay"
           style={{ width: '100%', height: '100%', border: '0' }}
           title="Videollamada Jitsi"
@@ -273,7 +275,6 @@ const JitsiRoom: React.FC<JitsiRoomProps> = ({ userName, roomId }) => {
   );
 };
 
-// TypeScript declarations
 declare global {
   interface Window {
     JitsiMeetExternalAPI: any;
