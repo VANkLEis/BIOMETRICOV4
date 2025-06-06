@@ -47,7 +47,14 @@ class ConnectionManager {
     this.reconnectAttempts = 0;
     this.heartbeatInterval = null;
     this.streamingInterval = null;
+    
+    // 🔧 FIXED: Elementos para Socket.IO streaming
+    this.localVideo = null;
+    this.localCanvas = null;
     this.remoteCanvas = null;
+    this.remoteVideo = null;
+    this.frameCount = 0;
+    this.lastFrameTime = 0;
   }
 
   _log(message, level = 'info') {
@@ -354,7 +361,7 @@ class ConnectionManager {
       }
     });
 
-    // Socket.IO streaming fallback
+    // 🔧 FIXED: Socket.IO streaming fallback con mejor manejo
     this.socket.on('stream-frame', (data) => {
       if (data.from !== this.socket.id && data.roomId === this.roomId) {
         this._handleSocketStreamFrame(data);
@@ -626,6 +633,7 @@ class ConnectionManager {
     }
   }
 
+  // 🔧 FIXED: Socket.IO streaming completamente reescrito
   _useSocketStreamingFallback() {
     this._log('🔄 Using Socket.IO streaming fallback');
     this._setState('socket_streaming');
@@ -635,70 +643,139 @@ class ConnectionManager {
       return;
     }
 
-    // Create video element for capturing frames
-    const video = document.createElement('video');
-    video.srcObject = this.localStream;
-    video.muted = true;
-    video.play();
+    // Limpiar elementos anteriores
+    this._cleanupStreamingElements();
 
-    // Create canvas for frame capture
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    // Crear video element para capturar frames del stream local
+    this.localVideo = document.createElement('video');
+    this.localVideo.srcObject = this.localStream;
+    this.localVideo.muted = true;
+    this.localVideo.autoplay = true;
+    this.localVideo.playsInline = true;
 
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth || 320, 320); // Limit size
-      canvas.height = Math.min(video.videoHeight || 240, 240);
+    // Crear canvas para capturar frames
+    this.localCanvas = document.createElement('canvas');
+    const ctx = this.localCanvas.getContext('2d');
 
-      this._log(`📺 Starting Socket.IO streaming: ${canvas.width}x${canvas.height}`);
+    this.localVideo.onloadedmetadata = () => {
+      // Configurar tamaño del canvas
+      const maxWidth = 320;
+      const maxHeight = 240;
+      const videoWidth = this.localVideo.videoWidth || 320;
+      const videoHeight = this.localVideo.videoHeight || 240;
+      
+      // Mantener aspect ratio
+      const aspectRatio = videoWidth / videoHeight;
+      if (aspectRatio > maxWidth / maxHeight) {
+        this.localCanvas.width = maxWidth;
+        this.localCanvas.height = maxWidth / aspectRatio;
+      } else {
+        this.localCanvas.width = maxHeight * aspectRatio;
+        this.localCanvas.height = maxHeight;
+      }
 
-      // Send frames every 500ms (2 FPS) to reduce bandwidth
-      this.streamingInterval = setInterval(() => {
-        if (this.connectionState !== 'socket_streaming') {
-          clearInterval(this.streamingInterval);
-          return;
-        }
+      this._log(`📺 Starting Socket.IO streaming: ${this.localCanvas.width}x${this.localCanvas.height}`);
 
-        try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const frameData = canvas.toDataURL('image/jpeg', 0.4); // Moderate quality
+      // Iniciar captura de frames
+      this._startFrameCapture(ctx);
+    };
+
+    // Configurar canvas remoto para recibir frames
+    this._setupRemoteCanvas();
+
+    // Reproducir video local
+    this.localVideo.play().catch(error => {
+      this._log(`❌ Error playing local video: ${error.message}`, 'error');
+    });
+  }
+
+  _startFrameCapture(ctx) {
+    // Limpiar intervalo anterior
+    if (this.streamingInterval) {
+      clearInterval(this.streamingInterval);
+    }
+
+    // Capturar frames cada 500ms (2 FPS)
+    this.streamingInterval = setInterval(() => {
+      if (this.connectionState !== 'socket_streaming' || !this.localVideo || !this.socket?.connected) {
+        this._log('⏹️ Stopping frame capture - conditions not met');
+        clearInterval(this.streamingInterval);
+        return;
+      }
+
+      try {
+        // Verificar que el video esté listo
+        if (this.localVideo.readyState >= 2) { // HAVE_CURRENT_DATA
+          // Dibujar frame actual en canvas
+          ctx.drawImage(this.localVideo, 0, 0, this.localCanvas.width, this.localCanvas.height);
           
+          // Convertir a base64 con calidad moderada
+          const frameData = this.localCanvas.toDataURL('image/jpeg', 0.6);
+          
+          // Enviar frame
           this.socket.emit('stream-frame', {
             roomId: this.roomId,
             frame: frameData,
             timestamp: Date.now()
           });
-        } catch (error) {
-          this._log(`❌ Error capturing frame: ${error.message}`, 'error');
-        }
-      }, 500);
-    };
 
-    // Set up remote canvas for receiving frames
-    this._setupRemoteCanvas();
+          this.frameCount++;
+          
+          // Log cada 10 frames para no saturar
+          if (this.frameCount % 10 === 0) {
+            this._log(`📤 Sent ${this.frameCount} frames via Socket.IO`);
+          }
+        } else {
+          this._log('⚠️ Video not ready for frame capture');
+        }
+      } catch (error) {
+        this._log(`❌ Error capturing frame: ${error.message}`, 'error');
+      }
+    }, 500); // 2 FPS
   }
 
   _setupRemoteCanvas() {
-    // Create canvas for remote stream
+    this._log('🖼️ Setting up remote canvas for Socket.IO streaming');
+    
+    // Crear canvas para stream remoto
     this.remoteCanvas = document.createElement('canvas');
     this.remoteCanvas.width = 320;
     this.remoteCanvas.height = 240;
     
-    const ctx = this.remoteCanvas.getContext('2d');
+    // Crear video element para mostrar el canvas
+    this.remoteVideo = document.createElement('video');
+    this.remoteVideo.autoplay = true;
+    this.remoteVideo.playsInline = true;
+    this.remoteVideo.muted = true;
     
-    // Create stream from canvas
-    const stream = this.remoteCanvas.captureStream(2); // 2 FPS
-    this.remoteStream = stream;
+    // Crear stream desde canvas
+    try {
+      const stream = this.remoteCanvas.captureStream(2); // 2 FPS
+      this.remoteVideo.srcObject = stream;
+      this.remoteStream = stream;
 
-    this._log('✅ Socket.IO streaming setup complete');
-    
-    if (this.callbacks.onRemoteStream) {
-      this.callbacks.onRemoteStream(stream);
+      this._log('✅ Remote canvas stream created successfully');
+      
+      // Notificar que tenemos stream remoto
+      if (this.callbacks.onRemoteStream) {
+        this.callbacks.onRemoteStream(stream);
+      }
+      
+      // Reproducir video remoto
+      this.remoteVideo.play().catch(error => {
+        this._log(`❌ Error playing remote video: ${error.message}`, 'error');
+      });
+      
+    } catch (error) {
+      this._log(`❌ Error creating remote canvas stream: ${error.message}`, 'error');
     }
   }
 
   _handleSocketStreamFrame(data) {
     if (!this.remoteCanvas) {
+      this._log('⚠️ Remote canvas not ready, setting up...');
       this._setupRemoteCanvas();
+      return;
     }
     
     try {
@@ -706,13 +783,61 @@ class ConnectionManager {
       const img = new Image();
       
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
+        try {
+          // Limpiar canvas
+          ctx.clearRect(0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
+          
+          // Dibujar nueva imagen
+          ctx.drawImage(img, 0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
+          
+          // Actualizar timestamp del último frame
+          this.lastFrameTime = Date.now();
+          
+          // Log cada 10 frames recibidos
+          if (this.frameCount % 10 === 0) {
+            this._log(`📥 Received frame via Socket.IO (${this.remoteCanvas.width}x${this.remoteCanvas.height})`);
+          }
+        } catch (drawError) {
+          this._log(`❌ Error drawing frame: ${drawError.message}`, 'error');
+        }
       };
       
+      img.onerror = () => {
+        this._log(`❌ Error loading frame image`, 'error');
+      };
+      
+      // Cargar imagen
       img.src = data.frame;
+      
     } catch (error) {
       this._log(`❌ Error handling socket stream frame: ${error.message}`, 'error');
     }
+  }
+
+  _cleanupStreamingElements() {
+    this._log('🧹 Cleaning up streaming elements');
+    
+    if (this.streamingInterval) {
+      clearInterval(this.streamingInterval);
+      this.streamingInterval = null;
+    }
+    
+    if (this.localVideo) {
+      this.localVideo.pause();
+      this.localVideo.srcObject = null;
+      this.localVideo = null;
+    }
+    
+    if (this.remoteVideo) {
+      this.remoteVideo.pause();
+      this.remoteVideo.srcObject = null;
+      this.remoteVideo = null;
+    }
+    
+    this.localCanvas = null;
+    this.remoteCanvas = null;
+    this.frameCount = 0;
+    this.lastFrameTime = 0;
   }
 
   _attemptReconnect() {
@@ -750,6 +875,8 @@ class ConnectionManager {
   }
 
   _clearRemoteStream() {
+    this._log('🧹 Clearing remote stream');
+    
     if (this.remoteStream) {
       this.remoteStream = null;
       
@@ -757,6 +884,9 @@ class ConnectionManager {
         this.callbacks.onRemoteStream(null);
       }
     }
+    
+    // Limpiar elementos de streaming
+    this._cleanupStreamingElements();
   }
 
   setCallbacks(callbacks) {
@@ -774,7 +904,11 @@ class ConnectionManager {
       isSocketConnected: this.socket && this.socket.connected,
       peerConnectionState: this.peerConnection ? this.peerConnection.connectionState : null,
       reconnectAttempts: this.reconnectAttempts,
-      serverUrl: this.socket ? this.socket.io.uri : null
+      serverUrl: this.socket ? this.socket.io.uri : null,
+      // 🔧 ADDED: Información adicional de streaming
+      frameCount: this.frameCount,
+      lastFrameTime: this.lastFrameTime,
+      streamingActive: !!this.streamingInterval
     };
   }
 
@@ -786,10 +920,8 @@ class ConnectionManager {
       this.heartbeatInterval = null;
     }
 
-    if (this.streamingInterval) {
-      clearInterval(this.streamingInterval);
-      this.streamingInterval = null;
-    }
+    // Limpiar elementos de streaming
+    this._cleanupStreamingElements();
 
     if (this.peerConnection) {
       this.peerConnection.close();
@@ -803,7 +935,6 @@ class ConnectionManager {
 
     this._clearRemoteStream();
     this.localStream = null;
-    this.remoteCanvas = null;
     this._setState('idle');
     
     this._log('✅ Cleanup completed');
