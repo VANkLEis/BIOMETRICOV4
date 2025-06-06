@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server, TestTube, Eye, Wrench } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server, TestTube, Eye, Wrench, Scan, Fingerprint } from 'lucide-react';
 import ConnectionManager from '../utils/connectionManager.js';
 import { getUserMedia, stopStream } from '../utils/mediaManager.js';
 
@@ -30,9 +30,13 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [connectionMethod, setConnectionMethod] = useState<string>('');
   const [connectionTestResults, setConnectionTestResults] = useState<any[]>([]);
   
-  // 🔧 ADDED: Estados para diagnóstico de video
+  // 🔧 FIXED: Estados para diagnóstico de video
   const [videoDiagnosis, setVideoDiagnosis] = useState<any>(null);
   const [showVideoDiagnosis, setShowVideoDiagnosis] = useState(false);
+  
+  // 🎨 ADDED: Estados para animaciones de escaneo
+  const [faceScanning, setFaceScanning] = useState(false);
+  const [fingerprintScanning, setFingerprintScanning] = useState(false);
   
   // Estados de timing
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
@@ -196,7 +200,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🔧 FIXED: Solicitar medios y configurar renderizado local
+  // 🔧 FIXED: Solicitar medios y configurar renderizado local CORRECTAMENTE
   const handleRequestMedia = async () => {
     if (!connectionManagerRef.current) return;
     
@@ -218,10 +222,29 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       
       setLocalStream(result.stream);
       
-      // 🔧 FIXED: Agregar stream al connection manager CON referencia al video local
+      // 🔧 FIXED: CRÍTICO - Configurar renderizado local ANTES de agregar al connection manager
+      if (localVideoRef.current && result.stream) {
+        console.log('🎥 FIXED: Setting up local video display...');
+        
+        // Asignar stream directamente al elemento video local
+        localVideoRef.current.srcObject = result.stream;
+        localVideoRef.current.muted = true; // CRÍTICO para evitar feedback
+        localVideoRef.current.autoplay = true;
+        localVideoRef.current.playsInline = true;
+        
+        // Forzar reproducción
+        try {
+          await localVideoRef.current.play();
+          console.log('✅ FIXED: Local video is now visible and playing');
+        } catch (playError) {
+          console.error('❌ FIXED: Local video play error:', playError);
+        }
+      }
+      
+      // 🔧 FIXED: Agregar stream al connection manager DESPUÉS de configurar visualización
       await connectionManagerRef.current.addLocalStream(result.stream, localVideoRef.current);
       
-      console.log('✅ Stream added to connection manager with local video rendering');
+      console.log('✅ FIXED: Stream added to connection manager with local video rendering');
       
     } catch (err: any) {
       console.error('❌ Failed to get media:', err);
@@ -230,7 +253,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🔧 ADDED: Diagnóstico de video
+  // 🔧 FIXED: Diagnóstico de video mejorado
   const handleVideoDiagnosis = () => {
     if (!connectionManagerRef.current) return;
     
@@ -239,45 +262,80 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setVideoDiagnosis(diagnosis);
       setShowVideoDiagnosis(true);
       
-      console.log('🔍 Video diagnosis completed:', diagnosis);
+      console.log('🔍 FIXED: Video diagnosis completed:', diagnosis);
     } catch (error) {
       console.error('❌ Video diagnosis failed:', error);
       alert('❌ Video diagnosis failed: ' + error.message);
     }
   };
 
-  // 🔧 ADDED: Reparación de video
+  // 🔧 FIXED: Reparación de video mejorada
   const handleVideoRepair = () => {
     if (!connectionManagerRef.current) return;
     
     try {
       const repairs = connectionManagerRef.current.repairVideoRendering();
-      console.log('🔧 Video repair completed:', repairs);
+      console.log('🔧 FIXED: Video repair completed:', repairs);
+      
+      // 🔧 FIXED: Reparación adicional para video local
+      if (localVideoRef.current && localStream) {
+        console.log('🔧 FIXED: Additional local video repair...');
+        localVideoRef.current.srcObject = localStream;
+        localVideoRef.current.play().catch(console.error);
+      }
       
       // Actualizar diagnóstico después de la reparación
       setTimeout(() => {
         handleVideoDiagnosis();
       }, 1000);
       
-      alert(`✅ Video repair completed. Applied: ${repairs.join(', ')}`);
+      alert(`✅ FIXED: Video repair completed. Applied: ${repairs.join(', ')}`);
     } catch (error) {
       console.error('❌ Video repair failed:', error);
       alert('❌ Video repair failed: ' + error.message);
     }
   };
 
-  // 🔧 ADDED: Test visual de video
+  // 🔧 FIXED: Test visual de video mejorado
   const handleVideoTest = () => {
     if (!connectionManagerRef.current) return;
     
     try {
       const testElement = connectionManagerRef.current.createVideoTest();
-      console.log('🧪 Video test created');
-      alert('✅ Video test created! Check the visual test panel.');
+      console.log('🧪 FIXED: Video test created');
+      alert('✅ FIXED: Video test created! Check the visual test panel.');
     } catch (error) {
       console.error('❌ Video test failed:', error);
       alert('❌ Video test failed: ' + error.message);
     }
+  };
+
+  // 🎨 ADDED: Animación de escaneo facial
+  const handleFaceScan = () => {
+    if (faceScanning) return;
+    
+    setFaceScanning(true);
+    console.log('🔍 Starting face scan animation...');
+    
+    // Animación dura 3 segundos
+    setTimeout(() => {
+      setFaceScanning(false);
+      console.log('✅ Face scan animation completed');
+    }, 3000);
+  };
+
+  // 🎨 ADDED: Animación de escaneo de huella
+  const handleFingerprintScan = () => {
+    if (fingerprintScanning) return;
+    
+    setFingerprintScanning(true);
+    console.log('👆 Starting fingerprint scan animation...');
+    
+    // Animación dura 3 segundos
+    setTimeout(() => {
+      setFingerprintScanning(false);
+      console.log('✅ Fingerprint scan animation completed');
+    }, 3000);
   };
 
   // Toggle controles
@@ -606,7 +664,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             </div>
           )}
           
-          {/* 🔧 ADDED: Video Diagnosis Panel */}
+          {/* 🔧 FIXED: Video Diagnosis Panel */}
           {showVideoDiagnosis && videoDiagnosis && (
             <div className="bg-gray-800 p-4 rounded-lg text-left text-xs mb-4">
               <h4 className="text-white font-semibold mb-2">Video Diagnosis Results:</h4>
@@ -648,6 +706,49 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           playsInline
           className="w-full h-full object-cover bg-gray-800"
         />
+        
+        {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
+        {faceScanning && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="relative w-full h-full">
+              {/* Barra de escaneo facial que baja */}
+              <div 
+                className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                style={{
+                  animation: 'faceScan 3s ease-in-out',
+                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
+                }}
+              />
+              {/* Overlay de escaneo */}
+              <div className="absolute inset-0 bg-green-400 bg-opacity-10 border-2 border-green-400 border-dashed animate-pulse" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm font-medium">
+                🔍 Scanning Face...
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {fingerprintScanning && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="relative w-full h-full">
+              {/* Círculo pulsante para huella */}
+              <div 
+                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-4 border-blue-400 rounded-full"
+                style={{
+                  animation: 'fingerprintScan 3s ease-in-out infinite',
+                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
+                }}
+              />
+              {/* Overlay de escaneo */}
+              <div className="absolute inset-0 bg-blue-400 bg-opacity-10 animate-pulse" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm font-medium">
+                👆 Scanning Fingerprint...
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Local Video (Picture-in-Picture) */}
         <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
@@ -801,6 +902,29 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           )}
         </button>
 
+        {/* 🎨 ADDED: Botones de animación de escaneo */}
+        <button
+          onClick={handleFaceScan}
+          disabled={faceScanning}
+          className={`p-3 rounded-full transition-colors ${
+            faceScanning ? 'bg-green-600 animate-pulse' : 'bg-green-600 hover:bg-green-700'
+          } disabled:opacity-50`}
+          title="Face scan animation (local only)"
+        >
+          <Scan className="h-6 w-6 text-white" />
+        </button>
+
+        <button
+          onClick={handleFingerprintScan}
+          disabled={fingerprintScanning}
+          className={`p-3 rounded-full transition-colors ${
+            fingerprintScanning ? 'bg-blue-600 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'
+          } disabled:opacity-50`}
+          title="Fingerprint scan animation (local only)"
+        >
+          <Fingerprint className="h-6 w-6 text-white" />
+        </button>
+
         {(connectionState === 'error' || connectionState === 'disconnected') && (
           <button
             onClick={handleRetry}
@@ -851,6 +975,21 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           <Phone className="h-6 w-6 text-white transform rotate-135" />
         </button>
       </div>
+
+      {/* 🎨 ADDED: CSS para animaciones de escaneo */}
+      <style jsx>{`
+        @keyframes faceScan {
+          0% { top: 0; opacity: 1; }
+          50% { top: 50%; opacity: 0.8; }
+          100% { top: 100%; opacity: 0; }
+        }
+        
+        @keyframes fingerprintScan {
+          0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+          50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
+          100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };
