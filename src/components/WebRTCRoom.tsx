@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
@@ -21,24 +21,56 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [cameraStatus, setCameraStatus] = useState<'loading' | 'active' | 'error'>('loading');
   const [debugInfo, setDebugInfo] = useState<string>('');
   const [showDebug, setShowDebug] = useState(false);
+  const [isVideoRefReady, setIsVideoRefReady] = useState(false);
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRoom = useRef(false);
   const initializationAttempts = useRef(0);
+  const pendingStream = useRef<MediaStream | null>(null);
+
+  // Check if video ref is ready
+  useEffect(() => {
+    const checkVideoRef = () => {
+      if (localVideoRef.current) {
+        addDebugInfo('✅ Local video ref is now available');
+        setIsVideoRefReady(true);
+        
+        // If we have a pending stream, set it up now
+        if (pendingStream.current) {
+          addDebugInfo('🔄 Setting up pending stream...');
+          setupLocalVideo(pendingStream.current).then(() => {
+            setCameraStatus('active');
+            pendingStream.current = null;
+          }).catch((err) => {
+            addDebugInfo(`❌ Failed to setup pending stream: ${err.message}`);
+          });
+        }
+      } else {
+        // Keep checking until ref is available
+        setTimeout(checkVideoRef, 100);
+      }
+    };
+    
+    checkVideoRef();
+  }, []);
 
   useEffect(() => {
-    initializeWebRTC();
+    // Only initialize when video ref is ready
+    if (isVideoRefReady) {
+      initializeWebRTC();
+    }
+    
     return () => {
       cleanup();
     };
-  }, [roomId]);
+  }, [roomId, isVideoRefReady]);
 
-  const addDebugInfo = (message: string) => {
+  const addDebugInfo = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setDebugInfo(prev => `${prev}\n[${timestamp}] ${message}`);
     console.log(`[DEBUG] ${message}`);
-  };
+  }, []);
 
   const initializeWebRTC = async () => {
     try {
@@ -47,6 +79,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo(`🚀 Initializing WebRTC (attempt ${initializationAttempts.current})`);
       addDebugInfo(`🌍 Environment: ${window.location.hostname}`);
       addDebugInfo(`🔒 Protocol: ${window.location.protocol}`);
+      addDebugInfo(`📺 Video ref ready: ${!!localVideoRef.current}`);
       
       // Check if we're in a secure context
       if (!window.isSecureContext) {
@@ -67,11 +100,17 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       const stream = await getUserMediaWithFallback();
       
       setLocalStream(stream);
-      setCameraStatus('active');
       addDebugInfo(`✅ Media stream obtained: ${stream.getTracks().length} tracks`);
       
       // Set up local video with enhanced error handling
-      await setupLocalVideo(stream);
+      if (localVideoRef.current) {
+        await setupLocalVideo(stream);
+        setCameraStatus('active');
+      } else {
+        addDebugInfo('⚠️ Video ref not ready yet, storing stream for later');
+        pendingStream.current = stream;
+        // Don't set camera status to active yet
+      }
 
       // Connect to signaling server
       connectToSignalingServer();
@@ -276,6 +315,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         addDebugInfo('✅ Local video can play');
       };
 
+      // Remove any existing event listeners
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('error', onError);
+      video.removeEventListener('canplay', onCanPlay);
+
       video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
       video.addEventListener('error', onError, { once: true });
       video.addEventListener('canplay', onCanPlay, { once: true });
@@ -306,7 +350,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   };
 
   const connectToSignalingServer = () => {
-    // Get the correct signaling server URL
+    // 🔒 AJUSTE 2: Usar wss:// en producción y verificar conexión antes de emitir
     const signalingUrl = window.location.hostname === 'localhost' 
       ? 'ws://localhost:3000'
       : 'wss://biometricov4.onrender.com';
@@ -329,7 +373,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo(`✅ Connected to signaling server with socket ID: ${socket.id}`);
       setConnectionStatus('connected');
       
-      if (!hasJoinedRoom.current) {
+      // 🔒 AJUSTE 3: Verificar conexión antes de unirse a la sala
+      if (!hasJoinedRoom.current && socket.connected) {
         addDebugInfo('🚪 Joining room for the first time...');
         socket.emit('join-room', { roomId, userName });
         hasJoinedRoom.current = true;
@@ -595,14 +640,26 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         localVideoRef.current.srcObject = null;
       }
       
+      // Clear pending stream
+      if (pendingStream.current) {
+        pendingStream.current.getTracks().forEach(track => track.stop());
+        pendingStream.current = null;
+      }
+      
       // Wait a moment before retrying
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Try to get new stream
       const stream = await getUserMediaWithFallback();
       setLocalStream(stream);
-      await setupLocalVideo(stream);
-      setCameraStatus('active');
+      
+      if (localVideoRef.current) {
+        await setupLocalVideo(stream);
+        setCameraStatus('active');
+      } else {
+        pendingStream.current = stream;
+        addDebugInfo('⚠️ Video ref still not ready, storing stream for later');
+      }
       
       // Update peer connection if it exists
       if (peerConnectionRef.current) {
@@ -639,6 +696,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         track.stop();
         addDebugInfo(`🛑 Stopped ${track.kind} track`);
       });
+    }
+    
+    if (pendingStream.current) {
+      pendingStream.current.getTracks().forEach(track => track.stop());
+      pendingStream.current = null;
     }
     
     if (peerConnectionRef.current) {
