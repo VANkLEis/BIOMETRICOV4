@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
-import { Copy, Check, Phone } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
-import JitsiRoom from '../components/JitsiRoom';
+import WebRTCRoom from '../components/WebRTCRoom';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
@@ -26,7 +26,7 @@ const VideoCall: React.FC = () => {
     }
   };
 
-  const endCall = () => {
+  const handleEndCall = () => {
     setRole(null);
     navigate('/dashboard');
   };
@@ -35,33 +35,50 @@ const VideoCall: React.FC = () => {
     return <RoleSelector onSelect={handleRoleSelect} />;
   }
 
-  return (
-    <div className="flex flex-col h-screen bg-gray-900 overflow-hidden">
-      <div className="flex-1 relative">
-        <JitsiRoom userName={user?.username || 'Anonymous'} />
+  if (!roomId) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Invalid Room</h2>
+          <p className="mb-4">No room ID provided</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
+          >
+            Return to Dashboard
+          </button>
+        </div>
       </div>
+    );
+  }
 
-      <div className="bg-gray-800 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          {role === 'host' && roomId && (
+  return (
+    <div className="h-screen bg-gray-900 overflow-hidden relative">
+      <WebRTCRoom 
+        userName={user?.username || 'Anonymous'} 
+        roomId={roomId}
+        onEndCall={handleEndCall}
+      />
+
+      {/* Room Info Overlay */}
+      {role === 'host' && (
+        <div className="absolute bottom-20 left-4 bg-gray-800 bg-opacity-90 p-4 rounded-lg">
+          <div className="flex items-center space-x-2">
+            <span className="text-white text-sm">Room: {roomId}</span>
             <button
               onClick={copyRoomCode}
-              className="p-3 rounded-full bg-blue-600 hover:bg-blue-700"
+              className="p-1 rounded bg-blue-600 hover:bg-blue-700 transition-colors"
               title="Copy room code"
             >
-              {copied ? <Check className="h-6 w-6 text-white" /> : <Copy className="h-6 w-6 text-white" />}
+              {copied ? (
+                <Check className="h-4 w-4 text-white" />
+              ) : (
+                <Copy className="h-4 w-4 text-white" />
+              )}
             </button>
-          )}
+          </div>
         </div>
-
-        <button
-          onClick={endCall}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-700"
-          title="End call"
-        >
-          <Phone className="h-6 w-6 text-white transform rotate-135" />
-        </button>
-      </div>
+      )}
     </div>
   );
 };
