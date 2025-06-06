@@ -23,7 +23,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [showDebug, setShowDebug] = useState(true);
   const [initializationStep, setInitializationStep] = useState<string>('Starting...');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [serverAttempt, setServerAttempt] = useState(0);
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -38,12 +37,18 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     console.log(`[DEBUG] ${message}`);
   }, []);
 
-  // 🔧 SOLUCIÓN 1: Lista de servidores de respaldo
-  const signalingServers = [
-    'wss://biometricov4.onrender.com',
-    'wss://securecall-signaling.onrender.com',
-    'ws://localhost:3000' // Fallback para desarrollo
-  ];
+  // 🔧 SOLUCIÓN CORREGIDA: Solo usar tu servidor de Render que realmente existe
+  const getSignalingServerUrl = () => {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    if (isLocalhost) {
+      // En desarrollo local, intentar localhost primero
+      return 'ws://localhost:3000';
+    } else {
+      // En producción, usar solo tu servidor de Render
+      return 'wss://biometricov4.onrender.com';
+    }
+  };
 
   useEffect(() => {
     if (!isInitialized) {
@@ -65,7 +70,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         setCameraStatus('error');
         setInitializationStep('Initialization timeout');
       }
-    }, 20000); // Aumentado a 20 segundos
+    }, 30000); // 30 segundos timeout
 
     return () => {
       if (initializationTimeout.current) {
@@ -108,9 +113,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setInitializationStep('Setting up local video...');
       setupLocalVideoAsync(stream);
       
-      // 🔧 SOLUCIÓN 2: Intentar conectar a múltiples servidores
-      setInitializationStep('Connecting to signaling servers...');
-      await connectToSignalingServerWithFallback();
+      setInitializationStep('Connecting to signaling server...');
+      await connectToSignalingServer();
       
       setInitializationStep('Initializing peer connection...');
       initializePeerConnection(stream);
@@ -142,6 +146,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         }
       } else if (err.message.includes('Secure context')) {
         errorMessage += 'HTTPS is required for camera access. Please use a secure connection.';
+      } else if (err.message.includes('signaling server')) {
+        errorMessage += 'Unable to connect to video call servers. Please check your internet connection and try again.';
       } else {
         errorMessage += `Technical error: ${err.message}`;
       }
@@ -362,154 +368,145 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     });
   };
 
-  // 🔧 SOLUCIÓN 3: Conexión con múltiples servidores de respaldo
-  const connectToSignalingServerWithFallback = async (): Promise<void> => {
+  // 🔧 SOLUCIÓN PRINCIPAL: Conexión directa a tu servidor de Render
+  const connectToSignalingServer = async (): Promise<void> => {
     return new Promise((resolve, reject) => {
-      let currentServerIndex = serverAttempt;
+      const serverUrl = getSignalingServerUrl();
       let connectionEstablished = false;
       
-      const tryNextServer = () => {
-        if (connectionEstablished) return;
-        
-        if (currentServerIndex >= signalingServers.length) {
-          addDebugInfo('❌ All signaling servers failed');
-          reject(new Error('Failed to connect to any signaling server'));
-          return;
-        }
-        
-        const serverUrl = signalingServers[currentServerIndex];
-        const isLocalhost = window.location.hostname === 'localhost';
-        
-        // Skip localhost server if not in development
-        if (serverUrl.includes('localhost') && !isLocalhost) {
-          currentServerIndex++;
-          tryNextServer();
-          return;
-        }
-        
-        addDebugInfo(`🛰️ Attempting connection to server ${currentServerIndex + 1}/${signalingServers.length}: ${serverUrl}`);
-        setServerAttempt(currentServerIndex);
-        
-        // Clear any existing connection timeout
-        if (connectionTimeout.current) {
-          clearTimeout(connectionTimeout.current);
-        }
-        
-        // Set connection timeout for this attempt
-        connectionTimeout.current = setTimeout(() => {
-          if (!connectionEstablished) {
-            addDebugInfo(`⏰ Connection timeout for ${serverUrl}`);
-            if (socketRef.current) {
-              socketRef.current.disconnect();
-              socketRef.current = null;
-            }
-            currentServerIndex++;
-            tryNextServer();
-          }
-        }, 15000); // 15 segundos por servidor
-        
-        connectToSignalingServer(serverUrl, () => {
-          if (!connectionEstablished) {
-            connectionEstablished = true;
-            if (connectionTimeout.current) {
-              clearTimeout(connectionTimeout.current);
-            }
-            addDebugInfo(`✅ Successfully connected to ${serverUrl}`);
-            resolve();
-          }
-        }, () => {
-          if (!connectionEstablished) {
-            addDebugInfo(`❌ Failed to connect to ${serverUrl}`);
-            currentServerIndex++;
-            setTimeout(tryNextServer, 1000); // Wait 1 second before trying next server
-          }
-        });
-      };
+      addDebugInfo(`🛰️ Connecting to signaling server: ${serverUrl}`);
       
-      tryNextServer();
-    });
-  };
-
-  const connectToSignalingServer = (serverUrl: string, onSuccess: () => void, onFailure: () => void) => {
-    const socket = io(serverUrl, {
-      transports: ['websocket', 'polling'], // Allow fallback to polling
-      secure: serverUrl.startsWith('wss://'),
-      reconnection: false, // We handle reconnection manually
-      forceNew: true,
-      timeout: 10000, // 10 second timeout per attempt
-      upgrade: true,
-      rememberUpgrade: false
-    });
-    
-    socketRef.current = socket;
-    
-    socket.on('connect', () => {
-      addDebugInfo(`✅ Connected to signaling server: ${serverUrl} (ID: ${socket.id})`);
-      setConnectionStatus('connected');
-      setInitializationStep('Connected to signaling server');
-      onSuccess();
+      // Clear any existing connection timeout
+      if (connectionTimeout.current) {
+        clearTimeout(connectionTimeout.current);
+      }
       
-      if (!hasJoinedRoom.current && socket.connected) {
-        addDebugInfo('🚪 Joining room for the first time...');
-        setInitializationStep('Joining room...');
-        socket.emit('join-room', { roomId, userName });
-        hasJoinedRoom.current = true;
-      }
-    });
+      // Set connection timeout (30 segundos para dar más tiempo)
+      connectionTimeout.current = setTimeout(() => {
+        if (!connectionEstablished) {
+          addDebugInfo(`⏰ Connection timeout for ${serverUrl} (30 seconds)`);
+          if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
+          }
+          reject(new Error('Connection timeout to signaling server'));
+        }
+      }, 30000);
+      
+      const socket = io(serverUrl, {
+        transports: ['websocket', 'polling'], // Allow fallback to polling
+        secure: serverUrl.startsWith('wss://'),
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        forceNew: true,
+        timeout: 25000, // 25 second timeout per attempt
+        upgrade: true,
+        rememberUpgrade: false,
+        autoConnect: true
+      });
+      
+      socketRef.current = socket;
+      
+      socket.on('connect', () => {
+        if (!connectionEstablished) {
+          connectionEstablished = true;
+          if (connectionTimeout.current) {
+            clearTimeout(connectionTimeout.current);
+          }
+          addDebugInfo(`✅ Connected to signaling server: ${serverUrl} (ID: ${socket.id})`);
+          setConnectionStatus('connected');
+          setInitializationStep('Connected to signaling server');
+          resolve();
+          
+          if (!hasJoinedRoom.current && socket.connected) {
+            addDebugInfo('🚪 Joining room for the first time...');
+            setInitializationStep('Joining room...');
+            socket.emit('join-room', { roomId, userName });
+            hasJoinedRoom.current = true;
+          }
+        }
+      });
 
-    socket.on('user-joined', (data) => {
-      addDebugInfo(`👤 User joined event received: ${JSON.stringify(data)}`);
-      setParticipants(data.participants);
-      setInitializationStep(`Room joined - ${data.participants.length} participants`);
-      if (data.shouldCreateOffer && data.userId !== socket.id) {
-        addDebugInfo('📤 Creating offer for new participant');
-        setInitializationStep('Creating offer...');
-        createOffer();
-      }
-    });
+      socket.on('user-joined', (data) => {
+        addDebugInfo(`👤 User joined event received: ${JSON.stringify(data)}`);
+        setParticipants(data.participants);
+        setInitializationStep(`Room joined - ${data.participants.length} participants`);
+        if (data.shouldCreateOffer && data.userId !== socket.id) {
+          addDebugInfo('📤 Creating offer for new participant');
+          setInitializationStep('Creating offer...');
+          createOffer();
+        }
+      });
 
-    socket.on('user-left', (data) => {
-      addDebugInfo(`👋 User left event received: ${JSON.stringify(data)}`);
-      setParticipants(data.participants);
-      setRemoteStream(null);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-      }
-    });
+      socket.on('user-left', (data) => {
+        addDebugInfo(`👋 User left event received: ${JSON.stringify(data)}`);
+        setParticipants(data.participants);
+        setRemoteStream(null);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+        }
+      });
 
-    socket.on('offer', async (data) => {
-      addDebugInfo(`📥 Received offer from: ${data.from}`);
-      if (data.from !== socket.id) {
-        setInitializationStep('Handling offer...');
-        await handleOffer(data.offer);
-      }
-    });
+      socket.on('offer', async (data) => {
+        addDebugInfo(`📥 Received offer from: ${data.from}`);
+        if (data.from !== socket.id) {
+          setInitializationStep('Handling offer...');
+          await handleOffer(data.offer);
+        }
+      });
 
-    socket.on('answer', async (data) => {
-      addDebugInfo(`📨 Received answer from: ${data.from}`);
-      if (data.from !== socket.id) {
-        setInitializationStep('Handling answer...');
-        await handleAnswer(data.answer);
-      }
-    });
+      socket.on('answer', async (data) => {
+        addDebugInfo(`📨 Received answer from: ${data.from}`);
+        if (data.from !== socket.id) {
+          setInitializationStep('Handling answer...');
+          await handleAnswer(data.answer);
+        }
+      });
 
-    socket.on('ice-candidate', async (data) => {
-      addDebugInfo(`🧊 Received ICE candidate from: ${data.from}`);
-      if (data.from !== socket.id) {
-        await handleIceCandidate(data.candidate);
-      }
-    });
+      socket.on('ice-candidate', async (data) => {
+        addDebugInfo(`🧊 Received ICE candidate from: ${data.from}`);
+        if (data.from !== socket.id) {
+          await handleIceCandidate(data.candidate);
+        }
+      });
 
-    socket.on('connect_error', (error) => {
-      addDebugInfo(`❌ Socket connection error to ${serverUrl}: ${error.message}`);
-      onFailure();
-    });
+      socket.on('connect_error', (error) => {
+        if (!connectionEstablished) {
+          addDebugInfo(`❌ Socket connection error to ${serverUrl}: ${error.message}`);
+          reject(new Error(`Failed to connect to signaling server: ${error.message}`));
+        }
+      });
 
-    socket.on('disconnect', (reason) => {
-      addDebugInfo(`🔌 Disconnected from ${serverUrl}: ${reason}`);
-      setConnectionStatus('disconnected');
-      setInitializationStep(`Disconnected: ${reason}`);
-      hasJoinedRoom.current = false;
+      socket.on('disconnect', (reason) => {
+        addDebugInfo(`🔌 Disconnected from ${serverUrl}: ${reason}`);
+        setConnectionStatus('disconnected');
+        setInitializationStep(`Disconnected: ${reason}`);
+        hasJoinedRoom.current = false;
+      });
+
+      socket.on('reconnect', (attemptNumber) => {
+        addDebugInfo(`🔄 Reconnected to ${serverUrl} after ${attemptNumber} attempts`);
+        setConnectionStatus('connected');
+        setInitializationStep('Reconnected to signaling server');
+        
+        // Rejoin room after reconnection
+        if (!hasJoinedRoom.current && socket.connected) {
+          addDebugInfo('🚪 Rejoining room after reconnection...');
+          socket.emit('join-room', { roomId, userName });
+          hasJoinedRoom.current = true;
+        }
+      });
+
+      socket.on('reconnect_error', (error) => {
+        addDebugInfo(`❌ Reconnection error: ${error.message}`);
+      });
+
+      socket.on('reconnect_failed', () => {
+        addDebugInfo('❌ Failed to reconnect after multiple attempts');
+        setConnectionStatus('disconnected');
+        setInitializationStep('Reconnection failed');
+      });
     });
   };
 
@@ -707,7 +704,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setCameraStatus('loading');
       setError(null);
       initializationAttempts.current = 0;
-      setServerAttempt(0); // Reset server attempt
       setInitializationStep('Retrying camera...');
       addDebugInfo('🔄 Retrying camera initialization...');
       
@@ -758,7 +754,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     try {
       setConnectionStatus('connecting');
       setError(null);
-      setServerAttempt(0);
       setInitializationStep('Retrying connection...');
       addDebugInfo('🔄 Retrying signaling server connection...');
       
@@ -769,7 +764,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       
       hasJoinedRoom.current = false;
       
-      await connectToSignalingServerWithFallback();
+      await connectToSignalingServer();
       
       addDebugInfo('✅ Connection retry successful');
       
@@ -871,7 +866,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <li>Close other applications that might be using the camera</li>
               <li>Try using a different browser (Chrome, Firefox, Safari)</li>
               <li>Disable browser extensions that might block camera access</li>
-              <li>Check if Render servers are accessible from your network</li>
+              <li>Check if your Render server (biometricov4.onrender.com) is accessible</li>
             </ul>
           </div>
         </div>
@@ -944,8 +939,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             connectionStatus === 'connecting' ? 'bg-yellow-600 text-white' :
             'bg-red-600 text-white'
           }`}>
-            {connectionStatus === 'connected' && <span>🔗 Connected (Server {serverAttempt + 1})</span>}
-            {connectionStatus === 'connecting' && <span>🔄 Connecting to servers...</span>}
+            {connectionStatus === 'connected' && <span>🔗 Connected to Render</span>}
+            {connectionStatus === 'connecting' && <span>🔄 Connecting to Render...</span>}
             {connectionStatus === 'disconnected' && (
               <button onClick={retryConnection} className="hover:bg-red-700 px-2 py-1 rounded">
                 ❌ Disconnected - Click to retry
@@ -990,7 +985,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         {/* Server Info */}
         <div className="absolute bottom-4 left-4">
           <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-xs">
-            🛰️ Multi-Server Fallback + 🌐 Google STUN + 🔁 OpenRelay TURN + 🔒 Vercel HTTPS
+            🛰️ Render Server + 🌐 Google STUN + 🔁 OpenRelay TURN + 🔒 Vercel HTTPS
           </div>
         </div>
 
