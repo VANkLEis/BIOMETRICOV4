@@ -20,35 +20,52 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [participants, setParticipants] = useState<string[]>([]);
   const [cameraStatus, setCameraStatus] = useState<'loading' | 'active' | 'error'>('loading');
   const [debugInfo, setDebugInfo] = useState<string>('');
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(true); // Show debug by default to help troubleshoot
   const [isVideoRefReady, setIsVideoRefReady] = useState(false);
+  const [initializationStep, setInitializationStep] = useState<string>('Starting...');
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRoom = useRef(false);
   const initializationAttempts = useRef(0);
   const pendingStream = useRef<MediaStream | null>(null);
+  const initializationTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Check if video ref is ready
+  // Check if video ref is ready with timeout
   useEffect(() => {
+    let attempts = 0;
+    const maxAttempts = 50; // 5 seconds max
+    
     const checkVideoRef = () => {
+      attempts++;
+      addDebugInfo(`🔍 Checking video ref (attempt ${attempts}/${maxAttempts})`);
+      
       if (localVideoRef.current) {
         addDebugInfo('✅ Local video ref is now available');
         setIsVideoRefReady(true);
+        setInitializationStep('Video element ready');
         
         // If we have a pending stream, set it up now
         if (pendingStream.current) {
           addDebugInfo('🔄 Setting up pending stream...');
+          setInitializationStep('Setting up pending stream...');
           setupLocalVideo(pendingStream.current).then(() => {
             setCameraStatus('active');
+            setInitializationStep('Camera active');
             pendingStream.current = null;
           }).catch((err) => {
             addDebugInfo(`❌ Failed to setup pending stream: ${err.message}`);
+            setInitializationStep(`Error: ${err.message}`);
           });
         }
-      } else {
+      } else if (attempts < maxAttempts) {
         // Keep checking until ref is available
         setTimeout(checkVideoRef, 100);
+      } else {
+        addDebugInfo('❌ Video ref not available after maximum attempts');
+        setError('Video element not ready. Please refresh the page.');
+        setCameraStatus('error');
+        setInitializationStep('Video element timeout');
       }
     };
     
@@ -58,6 +75,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   useEffect(() => {
     // Only initialize when video ref is ready
     if (isVideoRefReady) {
+      setInitializationStep('Starting WebRTC initialization...');
       initializeWebRTC();
     }
     
@@ -65,6 +83,24 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       cleanup();
     };
   }, [roomId, isVideoRefReady]);
+
+  // Add initialization timeout
+  useEffect(() => {
+    initializationTimeout.current = setTimeout(() => {
+      if (cameraStatus === 'loading') {
+        addDebugInfo('⏰ Initialization timeout reached');
+        setError('Initialization took too long. Please try refreshing the page.');
+        setCameraStatus('error');
+        setInitializationStep('Initialization timeout');
+      }
+    }, 30000); // 30 second timeout
+
+    return () => {
+      if (initializationTimeout.current) {
+        clearTimeout(initializationTimeout.current);
+      }
+    };
+  }, [cameraStatus]);
 
   const addDebugInfo = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -76,6 +112,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     try {
       initializationAttempts.current++;
       setCameraStatus('loading');
+      setInitializationStep('Checking environment...');
       addDebugInfo(`🚀 Initializing WebRTC (attempt ${initializationAttempts.current})`);
       addDebugInfo(`🌍 Environment: ${window.location.hostname}`);
       addDebugInfo(`🔒 Protocol: ${window.location.protocol}`);
@@ -86,42 +123,55 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         throw new Error('Secure context required for camera access');
       }
       addDebugInfo('✅ Secure context confirmed');
+      setInitializationStep('Secure context confirmed');
       
       // Check media devices support
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('getUserMedia not supported in this browser');
       }
       addDebugInfo('✅ getUserMedia API available');
+      setInitializationStep('Media API available');
       
       // Request permissions explicitly first
+      setInitializationStep('Requesting permissions...');
       await requestMediaPermissions();
       
       // Get user media with enhanced fallback options
+      setInitializationStep('Getting camera access...');
       const stream = await getUserMediaWithFallback();
       
       setLocalStream(stream);
       addDebugInfo(`✅ Media stream obtained: ${stream.getTracks().length} tracks`);
+      setInitializationStep('Media stream obtained');
       
       // Set up local video with enhanced error handling
       if (localVideoRef.current) {
+        setInitializationStep('Setting up local video...');
         await setupLocalVideo(stream);
         setCameraStatus('active');
+        setInitializationStep('Camera active');
       } else {
         addDebugInfo('⚠️ Video ref not ready yet, storing stream for later');
+        setInitializationStep('Storing stream for later...');
         pendingStream.current = stream;
         // Don't set camera status to active yet
       }
 
       // Connect to signaling server
+      setInitializationStep('Connecting to signaling server...');
       connectToSignalingServer();
       
       // Initialize peer connection
+      setInitializationStep('Initializing peer connection...');
       initializePeerConnection(stream);
+      
+      setInitializationStep('WebRTC ready');
       
     } catch (err: any) {
       console.error('Error initializing WebRTC:', err);
       addDebugInfo(`❌ Initialization failed: ${err.message}`);
       setCameraStatus('error');
+      setInitializationStep(`Error: ${err.message}`);
       
       // Enhanced error messages
       let errorMessage = 'Failed to access camera/microphone. ';
@@ -136,7 +186,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         errorMessage += 'Camera constraints could not be satisfied. Trying with basic settings...';
         // Retry with minimal constraints
         if (initializationAttempts.current < 3) {
-          setTimeout(() => initializeWebRTC(), 2000);
+          setTimeout(() => {
+            setInitializationStep('Retrying with basic settings...');
+            initializeWebRTC();
+          }, 2000);
           return;
         }
       } else if (err.message.includes('Secure context')) {
@@ -172,6 +225,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       
       // Test with minimal constraints first to check basic access
       try {
+        addDebugInfo('🧪 Testing basic media access...');
         const testStream = await navigator.mediaDevices.getUserMedia({ 
           video: { width: 320, height: 240 }, 
           audio: true 
@@ -372,10 +426,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     socket.on('connect', () => {
       addDebugInfo(`✅ Connected to signaling server with socket ID: ${socket.id}`);
       setConnectionStatus('connected');
+      setInitializationStep('Connected to signaling server');
       
       // 🔒 AJUSTE 3: Verificar conexión antes de unirse a la sala
       if (!hasJoinedRoom.current && socket.connected) {
         addDebugInfo('🚪 Joining room for the first time...');
+        setInitializationStep('Joining room...');
         socket.emit('join-room', { roomId, userName });
         hasJoinedRoom.current = true;
       }
@@ -384,8 +440,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     socket.on('user-joined', (data) => {
       addDebugInfo(`👤 User joined event received: ${JSON.stringify(data)}`);
       setParticipants(data.participants);
+      setInitializationStep(`Room joined - ${data.participants.length} participants`);
       if (data.shouldCreateOffer && data.userId !== socket.id) {
         addDebugInfo('📤 Creating offer for new participant');
+        setInitializationStep('Creating offer...');
         createOffer();
       }
     });
@@ -402,6 +460,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     socket.on('offer', async (data) => {
       addDebugInfo(`📥 Received offer from: ${data.from}`);
       if (data.from !== socket.id) {
+        setInitializationStep('Handling offer...');
         await handleOffer(data.offer);
       }
     });
@@ -409,6 +468,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     socket.on('answer', async (data) => {
       addDebugInfo(`📨 Received answer from: ${data.from}`);
       if (data.from !== socket.id) {
+        setInitializationStep('Handling answer...');
         await handleAnswer(data.answer);
       }
     });
@@ -424,17 +484,20 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo(`❌ Socket connection error: ${error.message}`);
       setError('Failed to connect to signaling server');
       setConnectionStatus('disconnected');
+      setInitializationStep(`Connection error: ${error.message}`);
     });
 
     socket.on('disconnect', (reason) => {
       addDebugInfo(`🔌 Disconnected from signaling server: ${reason}`);
       setConnectionStatus('disconnected');
+      setInitializationStep(`Disconnected: ${reason}`);
       hasJoinedRoom.current = false;
     });
 
     socket.on('reconnect', () => {
       addDebugInfo('🔄 Reconnected to signaling server');
       setConnectionStatus('connected');
+      setInitializationStep('Reconnected to server');
       hasJoinedRoom.current = false;
     });
   };
@@ -476,6 +539,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       const [remoteStream] = event.streams;
       addDebugInfo(`📺 Received remote stream with ${remoteStream.getTracks().length} tracks`);
       setRemoteStream(remoteStream);
+      setInitializationStep('Remote stream received');
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
         remoteVideoRef.current.play().catch((err) => {
@@ -499,11 +563,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
       addDebugInfo(`🔗 Peer connection state: ${state}`);
+      setInitializationStep(`Peer connection: ${state}`);
       
       if (state === 'connected') {
         addDebugInfo('✅ Peer connection established successfully');
+        setInitializationStep('Peer connected');
       } else if (state === 'disconnected' || state === 'failed') {
         addDebugInfo('❌ Peer connection lost');
+        setInitializationStep('Peer disconnected');
         setRemoteStream(null);
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = null;
@@ -625,6 +692,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setCameraStatus('loading');
       setError(null);
       initializationAttempts.current = 0;
+      setInitializationStep('Retrying camera...');
       addDebugInfo('🔄 Retrying camera initialization...');
       
       // Stop existing stream
@@ -656,9 +724,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       if (localVideoRef.current) {
         await setupLocalVideo(stream);
         setCameraStatus('active');
+        setInitializationStep('Camera retry successful');
       } else {
         pendingStream.current = stream;
         addDebugInfo('⚠️ Video ref still not ready, storing stream for later');
+        setInitializationStep('Storing stream for later...');
       }
       
       // Update peer connection if it exists
@@ -684,6 +754,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     } catch (err: any) {
       addDebugInfo(`❌ Camera retry failed: ${err.message}`);
       setCameraStatus('error');
+      setInitializationStep(`Retry failed: ${err.message}`);
       setError('Failed to restart camera. Please refresh the page and try again.');
     }
   };
@@ -713,6 +784,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo('🔌 Socket disconnected');
     }
     
+    if (initializationTimeout.current) {
+      clearTimeout(initializationTimeout.current);
+    }
+    
     hasJoinedRoom.current = false;
   };
 
@@ -724,7 +799,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   if (error && cameraStatus === 'error') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
-        <div className="text-center p-8 max-w-2xl">
+        <div className="text-center p-8 max-w-4xl">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">Camera Access Error</h3>
           <p className="text-gray-300 mb-4">{error}</p>
@@ -752,7 +827,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           </div>
           
           {showDebug && (
-            <div className="bg-gray-800 p-4 rounded-lg text-left text-xs max-h-64 overflow-y-auto">
+            <div className="bg-gray-800 p-4 rounded-lg text-left text-xs max-h-64 overflow-y-auto mb-4">
               <h4 className="text-white font-semibold mb-2">Debug Information:</h4>
               <pre className="text-gray-300 whitespace-pre-wrap">{debugInfo}</pre>
             </div>
@@ -794,6 +869,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
                 <span className="text-gray-300 text-sm">Loading camera...</span>
+                <div className="text-xs text-gray-400 mt-1">{initializationStep}</div>
               </div>
             </div>
           )}
@@ -846,6 +922,13 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           </div>
         </div>
 
+        {/* Initialization Status */}
+        <div className="absolute top-16 left-4">
+          <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm">
+            📋 {initializationStep}
+          </div>
+        </div>
+
         {/* Participants Count */}
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
           <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
@@ -855,7 +938,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         </div>
 
         {/* Debug Toggle */}
-        <div className="absolute top-16 left-4">
+        <div className="absolute top-28 left-4">
           <button
             onClick={() => setShowDebug(!showDebug)}
             className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100"
@@ -866,7 +949,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
 
         {/* Debug Info Panel */}
         {showDebug && (
-          <div className="absolute top-20 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
+          <div className="absolute top-36 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
             <h4 className="text-white font-semibold mb-2 text-sm">Debug Information:</h4>
             <pre className="text-gray-300 text-xs whitespace-pre-wrap">{debugInfo}</pre>
           </div>
