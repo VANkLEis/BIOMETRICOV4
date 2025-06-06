@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle } from 'lucide-react';
-import io, { Socket } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
 
 interface WebRTCRoomProps {
   userName: string;
@@ -21,24 +21,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
-
-  // STUN/TURN servers configuration
-  const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ];
 
   useEffect(() => {
     initializeWebRTC();
@@ -81,23 +63,23 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   };
 
   const connectToSignalingServer = () => {
-    const serverUrl = process.env.NODE_ENV === 'production' 
-      ? 'https://secure-call-cmdy.onrender.com'
-      : 'http://localhost:3000';
-    
-    socketRef.current = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+    // 🛰️ Render signaling server with secure WebSocket
+    const socket = io('wss://biometricov4.onrender.com', {
+      transports: ['websocket'],
+      secure: true,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000
     });
     
-    socketRef.current.on('connect', () => {
-      console.log('Connected to signaling server');
-      socketRef.current?.emit('join-room', { roomId, userName });
+    socketRef.current = socket;
+    
+    socket.on('connect', () => {
+      console.log('Connected to Render signaling server');
+      socket.emit('join-room', { roomId, userName });
     });
 
-    socketRef.current.on('user-joined', (data) => {
+    socket.on('user-joined', (data) => {
       console.log('User joined:', data);
       setParticipants(data.participants);
       if (data.shouldCreateOffer) {
@@ -105,7 +87,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       }
     });
 
-    socketRef.current.on('user-left', (data) => {
+    socket.on('user-left', (data) => {
       console.log('User left:', data);
       setParticipants(data.participants);
       setRemoteStream(null);
@@ -114,39 +96,58 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       }
     });
 
-    socketRef.current.on('offer', async (data) => {
+    socket.on('offer', async (data) => {
       await handleOffer(data.offer);
     });
 
-    socketRef.current.on('answer', async (data) => {
+    socket.on('answer', async (data) => {
       await handleAnswer(data.answer);
     });
 
-    socketRef.current.on('ice-candidate', async (data) => {
+    socket.on('ice-candidate', async (data) => {
       await handleIceCandidate(data.candidate);
     });
 
-    socketRef.current.on('connect_error', (error) => {
+    socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
       setError('Failed to connect to signaling server');
     });
 
-    socketRef.current.on('disconnect', () => {
+    socket.on('disconnect', () => {
       console.log('Disconnected from signaling server');
       setConnectionStatus('disconnected');
     });
   };
 
   const initializePeerConnection = (stream: MediaStream) => {
-    peerConnectionRef.current = new RTCPeerConnection({ iceServers });
+    // 🌐 STUN de Google + 🔁 TURN gratuito de OpenRelay
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: 'stun:stun.l.google.com:19302' // STUN gratuito de Google
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:80',  // TURN gratuito
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443', // TURN gratuito HTTPS
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+    });
+    
+    peerConnectionRef.current = peerConnection;
     
     // Add local stream tracks
     stream.getTracks().forEach(track => {
-      peerConnectionRef.current?.addTrack(track, stream);
+      peerConnection.addTrack(track, stream);
     });
 
     // Handle remote stream
-    peerConnectionRef.current.ontrack = (event) => {
+    peerConnection.ontrack = (event) => {
       const [remoteStream] = event.streams;
       console.log('Received remote stream');
       setRemoteStream(remoteStream);
@@ -157,7 +158,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     };
 
     // Handle ICE candidates
-    peerConnectionRef.current.onicecandidate = (event) => {
+    peerConnection.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
         socketRef.current.emit('ice-candidate', {
           candidate: event.candidate,
@@ -167,8 +168,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     };
 
     // Handle connection state changes
-    peerConnectionRef.current.onconnectionstatechange = () => {
-      const state = peerConnectionRef.current?.connectionState;
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
       console.log('Connection state:', state);
       
       if (state === 'connected') {
@@ -176,6 +177,16 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       } else if (state === 'disconnected' || state === 'failed') {
         setConnectionStatus('disconnected');
       }
+    };
+
+    // Log ICE connection state changes
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+    };
+
+    // Log ICE gathering state changes
+    peerConnection.onicegatheringstatechange = () => {
+      console.log('ICE gathering state:', peerConnection.iceGatheringState);
     };
   };
 
@@ -324,9 +335,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             connectionStatus === 'connecting' ? 'bg-yellow-600 text-white' :
             'bg-red-600 text-white'
           }`}>
-            {connectionStatus === 'connected' && <span>Connected</span>}
-            {connectionStatus === 'connecting' && <span>Connecting...</span>}
-            {connectionStatus === 'disconnected' && <span>Disconnected</span>}
+            {connectionStatus === 'connected' && <span>🔗 Connected via Render</span>}
+            {connectionStatus === 'connecting' && <span>🔄 Connecting to Render...</span>}
+            {connectionStatus === 'disconnected' && <span>❌ Disconnected</span>}
           </div>
         </div>
 
@@ -338,12 +349,20 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           </div>
         </div>
 
+        {/* Server Info */}
+        <div className="absolute bottom-4 left-4">
+          <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-xs">
+            🛰️ Render + 🌐 Google STUN + 🔁 OpenRelay TURN
+          </div>
+        </div>
+
         {/* No Remote Stream Message */}
         {!remoteStream && connectionStatus === 'connected' && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
             <div className="text-center text-white">
               <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
               <p className="text-xl">Waiting for other participants...</p>
+              <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
             </div>
           </div>
         )}
