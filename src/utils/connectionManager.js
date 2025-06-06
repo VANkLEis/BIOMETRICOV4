@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import VideoRenderer from './videoRenderer.js';
 
 class ConnectionManager {
   constructor() {
@@ -11,6 +12,9 @@ class ConnectionManager {
     this.userName = null;
     this.isHost = false;
     this.participants = [];
+    
+    // 🔧 ADDED: VideoRenderer para manejar visualización
+    this.videoRenderer = new VideoRenderer();
     
     // Callbacks
     this.callbacks = {
@@ -48,7 +52,7 @@ class ConnectionManager {
     this.heartbeatInterval = null;
     this.streamingInterval = null;
     
-    // 🔧 FIXED: Elementos para Socket.IO streaming (sin CanvasRenderer por ahora)
+    // 🔧 FIXED: Elementos para Socket.IO streaming (simplificado)
     this.localCanvas = null;
     this.remoteCanvas = null;
     this.localVideo = null;
@@ -360,7 +364,7 @@ class ConnectionManager {
       }
     });
 
-    // 🔧 FIXED: Socket.IO streaming simplificado
+    // 🔧 FIXED: Socket.IO streaming con VideoRenderer
     this.socket.on('stream-frame', (data) => {
       if (data.from !== this.socket.id && data.roomId === this.roomId) {
         this._handleSocketStreamFrame(data);
@@ -433,7 +437,8 @@ class ConnectionManager {
     }
   }
 
-  async addLocalStream(stream) {
+  // 🔧 FIXED: Agregar stream local con VideoRenderer
+  async addLocalStream(stream, localVideoElement = null) {
     this._log('🎥 Adding local stream to ConnectionManager');
     this.localStream = stream;
 
@@ -442,6 +447,18 @@ class ConnectionManager {
     const audioTracks = stream.getAudioTracks();
     this._log(`   Video tracks: ${videoTracks.length}`);
     this._log(`   Audio tracks: ${audioTracks.length}`);
+
+    // 🔧 FIXED: Inicializar renderizado local para que el usuario se vea
+    if (localVideoElement) {
+      try {
+        this._log('🎨 Initializing local video rendering...');
+        const renderResult = this.videoRenderer.initializeLocalVideoRenderer(localVideoElement, stream);
+        this._log(`✅ Local video rendering initialized: ${renderResult.method}`);
+      } catch (renderError) {
+        this._log(`❌ Local video rendering failed: ${renderError.message}`, 'error');
+        // Continuar sin renderizado local si falla
+      }
+    }
 
     // Notify server about media readiness
     if (this.socket && this.socket.connected && this.roomId) {
@@ -463,11 +480,23 @@ class ConnectionManager {
       await this._initiatePeerConnection();
     } else {
       this._log(`⏳ Waiting for other participants (current: ${this.participants.length})`);
-      // 🔧 FIXED: Cambiar estado a media_ready en lugar de socket_streaming
       this._setState('media_ready');
     }
 
     return { success: true };
+  }
+
+  // 🔧 ADDED: Método para configurar renderizado remoto
+  setupRemoteVideoRenderer(remoteVideoElement) {
+    try {
+      this._log('🖼️ Setting up remote video renderer...');
+      const result = this.videoRenderer.initializeRemoteVideoRenderer(remoteVideoElement);
+      this._log('✅ Remote video renderer setup completed');
+      return result;
+    } catch (error) {
+      this._log(`❌ Remote video renderer setup failed: ${error.message}`, 'error');
+      throw error;
+    }
   }
 
   async _initiatePeerConnection() {
@@ -632,7 +661,7 @@ class ConnectionManager {
     }
   }
 
-  // 🔧 FIXED: Socket.IO streaming simplificado (sin CanvasRenderer por ahora)
+  // 🔧 FIXED: Socket.IO streaming con VideoRenderer
   async _useSocketStreamingFallback() {
     this._log('🔄 Using Socket.IO streaming fallback');
     this._setState('socket_streaming');
@@ -732,29 +761,11 @@ class ConnectionManager {
     }
   }
 
+  // 🔧 FIXED: Usar VideoRenderer para frames remotos
   async _handleSocketStreamFrame(data) {
     try {
-      // Crear canvas remoto si no existe
-      if (!this.remoteCanvas) {
-        this._log('🖼️ Creating remote canvas for received frames');
-        
-        this.remoteCanvas = document.createElement('canvas');
-        this.remoteCanvas.width = 320;
-        this.remoteCanvas.height = 240;
-        this.remoteCanvas.style.display = 'none';
-        document.body.appendChild(this.remoteCanvas);
-
-        // Crear stream desde canvas
-        const stream = this.remoteCanvas.captureStream(2);
-        this.remoteStream = stream;
-        
-        if (this.callbacks.onRemoteStream) {
-          this.callbacks.onRemoteStream(stream);
-        }
-      }
-
-      // Renderizar frame
-      const success = await this._renderFrame(data.frame);
+      // Renderizar usando VideoRenderer
+      const success = await this.videoRenderer.renderRemoteFrame(data.frame);
       
       if (success) {
         this.lastFrameTime = Date.now();
@@ -768,40 +779,6 @@ class ConnectionManager {
     } catch (error) {
       this._log(`❌ Error handling socket stream frame: ${error.message}`, 'error');
     }
-  }
-
-  _renderFrame(frameData) {
-    return new Promise((resolve) => {
-      if (!this.remoteCanvas || !frameData) {
-        resolve(false);
-        return;
-      }
-
-      const ctx = this.remoteCanvas.getContext('2d');
-      if (!ctx) {
-        resolve(false);
-        return;
-      }
-
-      const img = new Image();
-      
-      img.onload = () => {
-        try {
-          ctx.clearRect(0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
-          ctx.drawImage(img, 0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
-          resolve(true);
-        } catch (error) {
-          this._log(`❌ Error drawing frame: ${error.message}`, 'error');
-          resolve(false);
-        }
-      };
-
-      img.onerror = () => {
-        resolve(false);
-      };
-
-      img.src = frameData;
-    });
   }
 
   _attemptReconnect() {
@@ -868,8 +845,26 @@ class ConnectionManager {
       serverUrl: this.socket ? this.socket.io.uri : null,
       frameCount: this.frameCount,
       lastFrameTime: this.lastFrameTime,
-      streamingActive: !!this.streamingInterval
+      streamingActive: !!this.streamingInterval,
+      // 🔧 ADDED: Estadísticas de VideoRenderer
+      videoRendererStats: this.videoRenderer.getStats()
     };
+  }
+
+  // 🔧 ADDED: Métodos de diagnóstico
+  diagnoseVideoIssues() {
+    this._log('🔍 Running video diagnosis...');
+    return this.videoRenderer.diagnoseRenderingIssues();
+  }
+
+  repairVideoRendering() {
+    this._log('🔧 Attempting video rendering repair...');
+    return this.videoRenderer.attemptRenderingRepair();
+  }
+
+  createVideoTest(container) {
+    this._log('🧪 Creating video test...');
+    return this.videoRenderer.createVisualTest(container);
   }
 
   cleanup() {
@@ -884,6 +879,9 @@ class ConnectionManager {
       clearInterval(this.streamingInterval);
       this.streamingInterval = null;
     }
+
+    // 🔧 ADDED: Limpiar VideoRenderer
+    this.videoRenderer.cleanup();
 
     // Limpiar elementos DOM
     if (this.localVideo) {
