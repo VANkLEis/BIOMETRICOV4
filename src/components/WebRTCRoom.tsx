@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
-import mediaManager, { getUserMedia, stopStream, setDebugMode, getLastError } from '../utils/mediaManager.js';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi } from 'lucide-react';
+import CallManager from '../utils/callManager.js';
 
 interface WebRTCRoomProps {
   userName: string;
@@ -12,545 +11,399 @@ interface WebRTCRoomProps {
 const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const callManagerRef = useRef<CallManager | null>(null);
+  
+  // Estados principales
+  const [callState, setCallState] = useState<string>('idle');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [error, setError] = useState<any>(null);
+  
+  // Estados de UI
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState<'waiting' | 'connecting' | 'connected' | 'disconnected'>('waiting');
-  const [error, setError] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<string[]>([]);
-  const [cameraStatus, setCameraStatus] = useState<'waiting' | 'loading' | 'active' | 'error'>('waiting');
-  const [debugInfo, setDebugInfo] = useState<string>('');
   const [showDebug, setShowDebug] = useState(false);
-  const [initializationStep, setInitializationStep] = useState<string>('Ready to start');
-  const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string>('');
   const [mediaInfo, setMediaInfo] = useState<any>(null);
+  const [connectionInfo, setConnectionInfo] = useState<any>(null);
   
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const socketRef = useRef<Socket | null>(null);
-  const hasJoinedRoom = useRef(false);
-  const initializationAttempts = useRef(0);
-  const connectionTimeout = useRef<NodeJS.Timeout | null>(null);
+  // Estados de timing
+  const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
+  const [mediaRequestTime, setMediaRequestTime] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
 
-  const addDebugInfo = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugInfo(prev => `${prev}\n[${timestamp}] ${message}`);
-    console.log(`[DEBUG] ${message}`);
+  // Actualizar tiempo transcurrido
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (joinStartTime && (callState === 'joining' || callState === 'requesting_media')) {
+      interval = setInterval(() => {
+        setElapsedTime(Date.now() - joinStartTime);
+      }, 100);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [joinStartTime, callState]);
+
+  // Formatear tiempo transcurrido
+  const formatElapsedTime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    return `${seconds}s`;
+  };
+
+  // Obtener mensaje de estado para UI
+  const getStateMessage = () => {
+    switch (callState) {
+      case 'idle':
+        return 'Ready to join call';
+      case 'joining':
+        return `Connecting to room... (${formatElapsedTime(elapsedTime)})`;
+      case 'signaling_ready':
+        return 'Connected to room - Ready for media';
+      case 'requesting_media':
+        return `Requesting camera permissions... (${formatElapsedTime(elapsedTime)})`;
+      case 'media_ready':
+        return 'Media ready - Establishing peer connection...';
+      case 'connected':
+        return 'Call active';
+      case 'disconnected':
+        return 'Disconnected';
+      case 'error':
+        return 'Error occurred';
+      default:
+        return callState;
+    }
+  };
+
+  // Obtener color de estado
+  const getStateColor = () => {
+    switch (callState) {
+      case 'connected':
+        return 'bg-green-600';
+      case 'requesting_media':
+      case 'joining':
+      case 'media_ready':
+        return 'bg-yellow-600';
+      case 'signaling_ready':
+        return 'bg-blue-600';
+      case 'error':
+      case 'disconnected':
+        return 'bg-red-600';
+      default:
+        return 'bg-gray-600';
+    }
+  };
+
+  // Inicializar CallManager
+  useEffect(() => {
+    const callManager = new CallManager();
+    callManagerRef.current = callManager;
+    
+    // Habilitar debug
+    callManager.setDebugMode(true);
+    
+    // Configurar callbacks
+    callManager.setCallbacks({
+      onStateChange: (newState: string, oldState: string, data: any) => {
+        console.log(`🔄 State change: ${oldState} → ${newState}`, data);
+        setCallState(newState);
+        
+        // Actualizar información de conexión
+        setConnectionInfo(callManager.getState());
+        
+        // Manejar estados específicos
+        if (newState === 'media_ready' && data?.mediaInfo) {
+          setMediaInfo(data.mediaInfo);
+        }
+      },
+      
+      onParticipantsChange: (newParticipants: string[]) => {
+        console.log('👥 Participants changed:', newParticipants);
+        setParticipants(newParticipants);
+      },
+      
+      onRemoteStream: (stream: MediaStream | null) => {
+        console.log('📺 Remote stream:', stream ? 'received' : 'cleared');
+        setRemoteStream(stream);
+        
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = stream;
+          if (stream) {
+            remoteVideoRef.current.play().catch(console.error);
+          }
+        }
+      },
+      
+      onError: (errorInfo: any) => {
+        console.error('❌ Call error:', errorInfo);
+        setError(errorInfo);
+      },
+      
+      onDebug: (logMessage: string) => {
+        setDebugLogs(prev => prev + '\n' + logMessage);
+      }
+    });
+    
+    return () => {
+      callManager.cleanup();
+    };
   }, []);
 
-  const getSignalingServerUrl = () => {
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
-    if (isLocalhost) {
-      return 'ws://localhost:3000';
-    } else {
-      return 'wss://biometricov4.onrender.com';
-    }
-  };
-
-  // Inicializar MediaManager con debug
-  useEffect(() => {
-    setDebugMode(true);
-    addDebugInfo('🎬 MediaManager initialized with debug mode');
-  }, [addDebugInfo]);
-
-  // 🔧 SOLUCIÓN PRINCIPAL: Usar MediaManager para obtener medios de forma robusta
-  const handleStartCall = async () => {
-    if (hasUserInteracted) return;
-    
-    setHasUserInteracted(true);
-    setCameraStatus('loading');
-    setConnectionStatus('connecting');
-    setInitializationStep('Starting WebRTC initialization...');
-    setError(null);
+  // 🔧 FASE 1: Unirse al room SIN medios
+  const handleJoinRoom = async () => {
+    if (!callManagerRef.current) return;
     
     try {
-      await initializeWebRTC();
+      setError(null);
+      setJoinStartTime(Date.now());
+      
+      console.log('🚀 Starting room join process...');
+      
+      await callManagerRef.current.joinRoom(roomId, userName, true);
+      
+      console.log('✅ Room joined successfully');
+      
     } catch (err: any) {
-      console.error('Error starting call:', err);
-      
-      // Si el error es recuperable, mostrar opciones de reintento
-      if (err.recoverable) {
-        setError(`${err.message}\n\nSuggested action: ${err.userAction}`);
-      } else {
-        setError(`Critical error: ${err.message}`);
-      }
-      
-      setCameraStatus('error');
-      setConnectionStatus('disconnected');
+      console.error('❌ Failed to join room:', err);
+      setError(err);
     }
   };
 
-  const initializeWebRTC = async () => {
+  // 🔧 FASE 2: Solicitar medios (requiere interacción del usuario)
+  const handleRequestMedia = async () => {
+    if (!callManagerRef.current) return;
+    
     try {
-      initializationAttempts.current++;
-      setInitializationStep('Initializing media manager...');
-      addDebugInfo(`🚀 Starting WebRTC initialization (attempt ${initializationAttempts.current})`);
+      setError(null);
+      setMediaRequestTime(Date.now());
       
-      // Inicializar MediaManager
-      const capabilities = await mediaManager.initialize();
-      addDebugInfo(`✅ MediaManager initialized: ${JSON.stringify(capabilities)}`);
-      setInitializationStep('Media manager ready');
+      console.log('🎥 Starting media request...');
       
-      setInitializationStep('Getting camera and microphone access...');
-      
-      // Usar MediaManager para obtener medios con fallbacks automáticos
-      const mediaResult = await getUserMedia({
+      const result = await callManagerRef.current.requestMedia({
         quality: 'medium',
         video: true,
         audio: true,
-        fallbackToAudioOnly: false, // No fallar a solo audio inmediatamente
-        allowPartialSuccess: true   // Permitir éxito parcial (solo video o solo audio)
+        fallbackToAudioOnly: true,
+        allowPartialSuccess: true
       });
       
-      setLocalStream(mediaResult.stream);
-      setMediaInfo(mediaResult);
-      addDebugInfo(`✅ Media obtained: ${mediaResult.description}`);
-      addDebugInfo(`📊 Quality: ${mediaResult.quality}, Partial: ${mediaResult.isPartial}`);
-      setInitializationStep(`Media ready: ${mediaResult.description}`);
+      console.log('✅ Media obtained:', result);
+      
+      setLocalStream(result.stream);
+      setMediaInfo(result.mediaInfo);
       
       // Configurar video local
-      setInitializationStep('Setting up local video...');
-      await setupLocalVideo(mediaResult.stream);
-      
-      // Conectar al servidor de señalización
-      setInitializationStep('Connecting to signaling server...');
-      await connectToSignalingServer();
-      
-      // Inicializar conexión peer
-      setInitializationStep('Initializing peer connection...');
-      initializePeerConnection(mediaResult.stream);
-      
-      setCameraStatus('active');
-      setInitializationStep('WebRTC ready');
-      
-      // Mostrar advertencia si es éxito parcial
-      if (mediaResult.isPartial) {
-        const warningMsg = `Partial media access: ${mediaResult.description}. Some features may be limited.`;
-        addDebugInfo(`⚠️ ${warningMsg}`);
-        // No establecer como error, solo como advertencia
+      if (localVideoRef.current && result.stream) {
+        localVideoRef.current.srcObject = result.stream;
+        localVideoRef.current.play().catch(console.error);
       }
       
     } catch (err: any) {
-      console.error('Error initializing WebRTC:', err);
-      addDebugInfo(`❌ Initialization failed: ${err.message}`);
-      setCameraStatus('error');
-      setConnectionStatus('disconnected');
-      setInitializationStep(`Error: ${err.message}`);
-      
-      // Obtener error detallado del MediaManager
-      const lastError = getLastError();
-      if (lastError) {
-        addDebugInfo(`📋 Detailed error: ${JSON.stringify(lastError, null, 2)}`);
-      }
-      
-      throw err;
+      console.error('❌ Failed to get media:', err);
+      setError(err);
     }
   };
 
-  const setupLocalVideo = async (stream: MediaStream): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (!localVideoRef.current) {
-        reject(new Error('Local video ref not available'));
-        return;
-      }
-
-      const video = localVideoRef.current;
-      addDebugInfo('📺 Setting up local video...');
-      
-      const onLoadedMetadata = () => {
-        addDebugInfo(`✅ Local video loaded: ${video.videoWidth}x${video.videoHeight}`);
-        video.play().then(() => {
-          addDebugInfo('✅ Local video playing');
-          resolve();
-        }).catch((err) => {
-          addDebugInfo(`⚠️ Video play error: ${err.message}`);
-          resolve(); // Continue even if play fails
-        });
-      };
-
-      const onError = (err: any) => {
-        addDebugInfo(`❌ Local video error: ${err}`);
-        reject(new Error('Local video setup failed'));
-      };
-
-      video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-      video.addEventListener('error', onError, { once: true });
-
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-      video.autoplay = true;
-
-      // Timeout fallback
-      setTimeout(() => {
-        if (video.readyState === 0) {
-          addDebugInfo('⚠️ Video setup timeout, continuing anyway');
-          resolve();
-        }
-      }, 5000);
-    });
-  };
-
-  const connectToSignalingServer = async (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const serverUrl = getSignalingServerUrl();
-      let connectionEstablished = false;
-      
-      addDebugInfo(`🛰️ Connecting to: ${serverUrl}`);
-      
-      if (connectionTimeout.current) {
-        clearTimeout(connectionTimeout.current);
-      }
-      
-      connectionTimeout.current = setTimeout(() => {
-        if (!connectionEstablished) {
-          addDebugInfo(`⏰ Connection timeout (30s)`);
-          reject(new Error('Connection timeout to signaling server'));
-        }
-      }, 30000);
-      
-      const socket = io(serverUrl, {
-        transports: ['websocket', 'polling'],
-        secure: serverUrl.startsWith('wss://'),
-        reconnection: true,
-        reconnectionAttempts: 3,
-        reconnectionDelay: 2000,
-        forceNew: true,
-        timeout: 20000
-      });
-      
-      socketRef.current = socket;
-      
-      socket.on('connect', () => {
-        if (!connectionEstablished) {
-          connectionEstablished = true;
-          if (connectionTimeout.current) {
-            clearTimeout(connectionTimeout.current);
-          }
-          addDebugInfo(`✅ Connected to signaling server`);
-          setConnectionStatus('connected');
-          resolve();
-          
-          if (!hasJoinedRoom.current) {
-            addDebugInfo('🚪 Joining room...');
-            socket.emit('join-room', { roomId, userName });
-            hasJoinedRoom.current = true;
-          }
-        }
-      });
-
-      socket.on('user-joined', (data) => {
-        addDebugInfo(`👤 User joined: ${JSON.stringify(data)}`);
-        setParticipants(data.participants);
-        if (data.shouldCreateOffer && data.userId !== socket.id) {
-          createOffer();
-        }
-      });
-
-      socket.on('user-left', (data) => {
-        addDebugInfo(`👋 User left: ${JSON.stringify(data)}`);
-        setParticipants(data.participants);
-        setRemoteStream(null);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null;
-        }
-      });
-
-      socket.on('offer', async (data) => {
-        if (data.from !== socket.id) {
-          await handleOffer(data.offer);
-        }
-      });
-
-      socket.on('answer', async (data) => {
-        if (data.from !== socket.id) {
-          await handleAnswer(data.answer);
-        }
-      });
-
-      socket.on('ice-candidate', async (data) => {
-        if (data.from !== socket.id) {
-          await handleIceCandidate(data.candidate);
-        }
-      });
-
-      socket.on('connect_error', (error) => {
-        if (!connectionEstablished) {
-          addDebugInfo(`❌ Connection error: ${error.message}`);
-          reject(new Error(`Failed to connect: ${error.message}`));
-        }
-      });
-
-      socket.on('disconnect', (reason) => {
-        addDebugInfo(`🔌 Disconnected: ${reason}`);
-        setConnectionStatus('disconnected');
-        hasJoinedRoom.current = false;
-      });
-    });
-  };
-
-  const initializePeerConnection = (stream: MediaStream) => {
-    addDebugInfo('🔗 Initializing peer connection...');
-    
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    });
-    
-    peerConnectionRef.current = peerConnection;
-    
-    stream.getTracks().forEach(track => {
-      addDebugInfo(`➕ Adding ${track.kind} track`);
-      peerConnection.addTrack(track, stream);
-    });
-
-    peerConnection.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      addDebugInfo(`📺 Received remote stream`);
-      setRemoteStream(remoteStream);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().catch(console.error);
-      }
-    };
-
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate && socketRef.current?.connected) {
-        socketRef.current.emit('ice-candidate', {
-          candidate: event.candidate,
-          roomId
-        });
-      }
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      addDebugInfo(`🔗 Peer connection: ${state}`);
-      
-      if (state === 'disconnected' || state === 'failed') {
-        setRemoteStream(null);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null;
-        }
-      }
-    };
-  };
-
-  const createOffer = async () => {
-    if (!peerConnectionRef.current || !socketRef.current?.connected) return;
-    
-    try {
-      addDebugInfo('📤 Creating offer...');
-      const offer = await peerConnectionRef.current.createOffer();
-      await peerConnectionRef.current.setLocalDescription(offer);
-      
-      socketRef.current.emit('offer', { offer, roomId });
-      addDebugInfo('✅ Offer sent');
-    } catch (err: any) {
-      addDebugInfo(`❌ Error creating offer: ${err.message}`);
-    }
-  };
-
-  const handleOffer = async (offer: RTCSessionDescriptionInit) => {
-    if (!peerConnectionRef.current || !socketRef.current?.connected) return;
-    
-    try {
-      addDebugInfo('📥 Handling offer...');
-      await peerConnectionRef.current.setRemoteDescription(offer);
-      const answer = await peerConnectionRef.current.createAnswer();
-      await peerConnectionRef.current.setLocalDescription(answer);
-      
-      socketRef.current.emit('answer', { answer, roomId });
-      addDebugInfo('✅ Answer sent');
-    } catch (err: any) {
-      addDebugInfo(`❌ Error handling offer: ${err.message}`);
-    }
-  };
-
-  const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
-    if (!peerConnectionRef.current) return;
-    
-    try {
-      if (peerConnectionRef.current.signalingState === 'stable') {
-        addDebugInfo('⚠️ Ignoring duplicate answer');
-        return;
-      }
-      
-      addDebugInfo('📨 Handling answer...');
-      await peerConnectionRef.current.setRemoteDescription(answer);
-      addDebugInfo('✅ Answer handled');
-    } catch (err: any) {
-      addDebugInfo(`❌ Error handling answer: ${err.message}`);
-    }
-  };
-
-  const handleIceCandidate = async (candidate: RTCIceCandidateInit) => {
-    if (!peerConnectionRef.current) return;
-    
-    try {
-      await peerConnectionRef.current.addIceCandidate(candidate);
-      addDebugInfo('✅ ICE candidate added');
-    } catch (err: any) {
-      addDebugInfo(`❌ Error handling ICE candidate: ${err.message}`);
-    }
-  };
-
+  // Toggle controles
   const toggleVideo = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoEnabled(videoTrack.enabled);
-        addDebugInfo(`📹 Video ${videoTrack.enabled ? 'enabled' : 'disabled'}`);
-      }
+    if (callManagerRef.current) {
+      const enabled = callManagerRef.current.toggleVideo();
+      setIsVideoEnabled(enabled);
     }
   };
 
   const toggleAudio = () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioEnabled(audioTrack.enabled);
-        addDebugInfo(`🎤 Audio ${audioTrack.enabled ? 'enabled' : 'disabled'}`);
-      }
+    if (callManagerRef.current) {
+      const enabled = callManagerRef.current.toggleAudio();
+      setIsAudioEnabled(enabled);
     }
   };
 
-  const retryConnection = async () => {
-    try {
-      setError(null);
-      setConnectionStatus('connecting');
-      setCameraStatus('loading');
-      setInitializationStep('Retrying...');
-      
-      // Limpiar usando MediaManager
-      if (localStream) {
-        stopStream(localStream);
-        setLocalStream(null);
-      }
-      
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-      
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
-      
-      hasJoinedRoom.current = false;
-      initializationAttempts.current = 0;
-      
-      await initializeWebRTC();
-      
-    } catch (err: any) {
-      addDebugInfo(`❌ Retry failed: ${err.message}`);
-      setError('Retry failed. Please refresh the page and try again.');
-      setCameraStatus('error');
-      setConnectionStatus('disconnected');
+  // Reintentar conexión
+  const handleRetry = async () => {
+    if (!callManagerRef.current) return;
+    
+    setError(null);
+    
+    // Si estamos en signaling_ready, solo reintentar medios
+    if (callState === 'signaling_ready') {
+      await handleRequestMedia();
+    } else {
+      // Limpiar y empezar de nuevo
+      callManagerRef.current.cleanup();
+      await handleJoinRoom();
     }
   };
 
-  const cleanup = () => {
-    addDebugInfo('🧹 Cleaning up...');
-    
-    // Usar MediaManager para limpiar
-    if (localStream) {
-      stopStream(localStream);
-    }
-    
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-    }
-    
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-    }
-    
-    if (connectionTimeout.current) {
-      clearTimeout(connectionTimeout.current);
-    }
-    
-    // Limpiar MediaManager
-    mediaManager.cleanup();
-  };
-
+  // Finalizar llamada
   const handleEndCall = () => {
-    cleanup();
+    if (callManagerRef.current) {
+      callManagerRef.current.cleanup();
+    }
     onEndCall();
   };
 
+  // Auto-join al montar el componente
   useEffect(() => {
-    return cleanup;
+    if (callState === 'idle') {
+      handleJoinRoom();
+    }
   }, []);
 
-  // Pantalla de inicio que requiere interacción del usuario
-  if (!hasUserInteracted) {
+  // 🎨 PANTALLA DE INICIO - Esperando conexión inicial
+  if (callState === 'idle' || callState === 'joining') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-md">
-          <Video className="h-16 w-16 text-blue-500 mx-auto mb-6" />
-          <h2 className="text-2xl font-bold mb-4">Ready to Join Call</h2>
+          <div className="relative mb-6">
+            <Wifi className="h-16 w-16 text-blue-500 mx-auto animate-pulse" />
+            {callState === 'joining' && (
+              <div className="absolute -bottom-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full">
+                {formatElapsedTime(elapsedTime)}
+              </div>
+            )}
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-4">
+            {callState === 'idle' ? 'Initializing...' : 'Connecting to Room'}
+          </h2>
+          
           <p className="text-gray-300 mb-6">
-            Click the button below to start your camera and join the video call.
+            {callState === 'idle' 
+              ? 'Setting up the call system...'
+              : 'Establishing secure connection to the signaling server...'
+            }
           </p>
-          <button
-            onClick={handleStartCall}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg inline-flex items-center text-lg font-medium transition-colors"
-          >
-            <Play className="h-6 w-6 mr-2" />
-            Start Video Call
-          </button>
-          <div className="mt-6 text-sm text-gray-400">
+          
+          <div className="text-sm text-gray-400 space-y-1">
             <p>Room: {roomId}</p>
             <p>User: {userName}</p>
+            {callState === 'joining' && (
+              <p>Time: {formatElapsedTime(elapsedTime)}</p>
+            )}
+          </div>
+          
+          {error && (
+            <div className="mt-6">
+              <button
+                onClick={handleRetry}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
+              >
+                Retry Connection
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 🎨 PANTALLA DE ACTIVACIÓN DE MEDIOS - Requiere interacción del usuario
+  if (callState === 'signaling_ready') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
+        <div className="text-center p-8 max-w-md">
+          <div className="relative mb-6">
+            <Video className="h-16 w-16 text-green-500 mx-auto" />
+            <div className="absolute -top-2 -right-2 bg-green-500 w-6 h-6 rounded-full flex items-center justify-center">
+              <span className="text-xs">✓</span>
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-4">Ready to Start Video</h2>
+          
+          <p className="text-gray-300 mb-6">
+            Successfully connected to the room! Click below to activate your camera and microphone.
+          </p>
+          
+          <button
+            onClick={handleRequestMedia}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg inline-flex items-center text-lg font-medium transition-colors mb-6"
+          >
+            <Play className="h-6 w-6 mr-2" />
+            Activate Camera & Microphone
+          </button>
+          
+          <div className="text-sm text-gray-400 space-y-1">
+            <p>✅ Connected to room: {roomId}</p>
+            <p>👥 Participants: {participants.length}</p>
+            {participants.length > 1 && (
+              <p>Others in room: {participants.filter(p => p !== userName).join(', ')}</p>
+            )}
+          </div>
+          
+          <div className="mt-6 text-xs text-gray-500">
+            <p>💡 This step requires your permission to access camera and microphone</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // Pantalla de error mejorada con información del MediaManager
-  if (error && (cameraStatus === 'error' || connectionStatus === 'disconnected')) {
-    const lastError = getLastError();
-    
+  // 🎨 PANTALLA DE SOLICITUD DE MEDIOS - Esperando permisos
+  if (callState === 'requesting_media') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
+        <div className="text-center p-8 max-w-md">
+          <div className="relative mb-6">
+            <Video className="h-16 w-16 text-yellow-500 mx-auto animate-pulse" />
+            <div className="absolute -bottom-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full">
+              {formatElapsedTime(elapsedTime)}
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-4">Requesting Permissions</h2>
+          
+          <p className="text-gray-300 mb-6">
+            Please allow access to your camera and microphone when prompted by your browser.
+          </p>
+          
+          <div className="bg-yellow-900 bg-opacity-30 p-4 rounded-lg mb-6">
+            <Clock className="h-6 w-6 text-yellow-400 mx-auto mb-2" />
+            <p className="text-yellow-200 text-sm">
+              Waiting for permissions... ({formatElapsedTime(elapsedTime)})
+            </p>
+            <p className="text-yellow-300 text-xs mt-2">
+              The connection will remain active while you grant permissions
+            </p>
+          </div>
+          
+          <div className="text-sm text-gray-400 space-y-1">
+            <p>🔗 Connection: Active</p>
+            <p>👥 Participants: {participants.length}</p>
+            <p>⏱️ Timeout: 30 seconds</p>
+          </div>
+          
+          <div className="mt-6 text-xs text-gray-500">
+            <p>💡 If you don't see a permission prompt, check your browser's address bar</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 🎨 PANTALLA DE ERROR MEJORADA
+  if (error) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-4xl">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">Connection Error</h3>
-          <p className="text-gray-300 mb-6 whitespace-pre-line">{error}</p>
+          <p className="text-gray-300 mb-6">{error.message}</p>
           
-          {lastError && (
-            <div className="bg-red-900 bg-opacity-30 p-4 rounded-lg mb-6 text-left">
-              <h4 className="font-semibold text-red-300 mb-2">Technical Details:</h4>
-              <p className="text-sm text-red-200 mb-2">Error Type: {lastError.name}</p>
-              <p className="text-sm text-red-200 mb-2">Requested: Video={lastError.requestedVideo}, Audio={lastError.requestedAudio}</p>
-              {lastError.userAction && (
-                <p className="text-sm text-yellow-200">💡 {lastError.userAction}</p>
-              )}
+          {error.userAction && (
+            <div className="bg-blue-900 bg-opacity-30 p-4 rounded-lg mb-6">
+              <p className="text-blue-200">💡 {error.userAction}</p>
             </div>
           )}
           
           <div className="space-x-4 mb-6">
-            {lastError?.recoverable !== false && (
+            {error.recoverable !== false && (
               <button
-                onClick={retryConnection}
+                onClick={handleRetry}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
@@ -575,13 +428,13 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           {showDebug && (
             <div className="bg-gray-800 p-4 rounded-lg text-left text-xs max-h-64 overflow-y-auto mb-4">
               <h4 className="text-white font-semibold mb-2">Debug Information:</h4>
-              <pre className="text-gray-300 whitespace-pre-wrap">{debugInfo}</pre>
+              <pre className="text-gray-300 whitespace-pre-wrap">{debugLogs}</pre>
               
-              {mediaInfo && (
+              {connectionInfo && (
                 <div className="mt-4 pt-4 border-t border-gray-600">
-                  <h5 className="text-white font-semibold mb-2">Media Information:</h5>
+                  <h5 className="text-white font-semibold mb-2">Connection State:</h5>
                   <pre className="text-gray-300 whitespace-pre-wrap">
-                    {JSON.stringify(mediaInfo, null, 2)}
+                    {JSON.stringify(connectionInfo, null, 2)}
                   </pre>
                 </div>
               )}
@@ -589,15 +442,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           )}
           
           <div className="mt-4 text-sm text-gray-400">
-            <p className="font-semibold mb-2">Troubleshooting:</p>
+            <p className="font-semibold mb-2">Troubleshooting Steps:</p>
             <ul className="list-disc list-inside text-left space-y-1">
               <li>Ensure you're using HTTPS (required for camera access)</li>
               <li>Allow camera and microphone permissions</li>
               <li>Close other apps using the camera</li>
               <li>Try a different browser (Chrome recommended)</li>
               <li>Check your internet connection</li>
-              <li>Verify Render server is accessible</li>
-              <li>Try refreshing the page</li>
+              <li>Verify server is accessible at biometricov4.onrender.com</li>
             </ul>
           </div>
         </div>
@@ -605,6 +457,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     );
   }
 
+  // 🎨 INTERFAZ PRINCIPAL DE VIDEOLLAMADA
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Video Container */}
@@ -619,17 +472,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         
         {/* Local Video (Picture-in-Picture) */}
         <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
-          {cameraStatus === 'loading' && (
-            <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-                <span className="text-gray-300 text-sm">Loading camera...</span>
-                <div className="text-xs text-gray-400 mt-1">{initializationStep}</div>
-              </div>
-            </div>
-          )}
-          
-          {(cameraStatus === 'loading' || cameraStatus === 'active') && (
+          {localStream ? (
             <video
               ref={localVideoRef}
               autoPlay
@@ -637,24 +480,29 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               muted
               className="w-full h-full object-cover"
             />
+          ) : (
+            <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
+              <Video className="h-8 w-8 text-gray-400" />
+            </div>
           )}
           
-          {!isVideoEnabled && cameraStatus === 'active' && (
+          {!isVideoEnabled && localStream && (
             <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
               <VideoOff className="h-8 w-8 text-gray-400" />
             </div>
           )}
           
+          {/* Status Indicator */}
           <div className="absolute top-2 left-2">
             <div className={`w-3 h-3 rounded-full ${
-              cameraStatus === 'active' ? 'bg-green-500' :
-              cameraStatus === 'loading' ? 'bg-yellow-500' :
+              callState === 'connected' ? 'bg-green-500' :
+              callState === 'media_ready' ? 'bg-yellow-500' :
               'bg-red-500'
             }`}></div>
           </div>
           
           {/* Media Quality Indicator */}
-          {mediaInfo && cameraStatus === 'active' && (
+          {mediaInfo && (
             <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-xs text-white">
               {mediaInfo.quality}
               {mediaInfo.isPartial && ' (partial)'}
@@ -664,15 +512,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
 
         {/* Connection Status */}
         <div className="absolute top-4 left-4">
-          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-            connectionStatus === 'connected' ? 'bg-green-600 text-white' :
-            connectionStatus === 'connecting' ? 'bg-yellow-600 text-white' :
-            'bg-red-600 text-white'
-          }`}>
-            {connectionStatus === 'connected' && <span>🔗 Connected</span>}
-            {connectionStatus === 'connecting' && <span>🔄 Connecting...</span>}
-            {connectionStatus === 'disconnected' && <span>❌ Disconnected</span>}
-            {connectionStatus === 'waiting' && <span>⏳ Waiting</span>}
+          <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
+            {getStateMessage()}
           </div>
         </div>
 
@@ -698,19 +539,17 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         {showDebug && (
           <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
             <h4 className="text-white font-semibold mb-2 text-sm">Debug Information:</h4>
-            <pre className="text-gray-300 text-xs whitespace-pre-wrap">{debugInfo}</pre>
+            <pre className="text-gray-300 text-xs whitespace-pre-wrap">{debugLogs}</pre>
             
-            {mediaInfo && (
+            {connectionInfo && (
               <div className="mt-2 pt-2 border-t border-gray-600">
-                <h5 className="text-white font-semibold mb-1 text-xs">Media Info:</h5>
+                <h5 className="text-white font-semibold mb-1 text-xs">Connection Info:</h5>
                 <div className="text-gray-300 text-xs">
-                  <p>Quality: {mediaInfo.quality}</p>
-                  <p>Video: {mediaInfo.hasVideo ? '✅' : '❌'}</p>
-                  <p>Audio: {mediaInfo.hasAudio ? '✅' : '❌'}</p>
-                  <p>Partial: {mediaInfo.isPartial ? '⚠️' : '✅'}</p>
-                  {mediaInfo.videoSettings && (
-                    <p>Resolution: {mediaInfo.videoSettings.width}x{mediaInfo.videoSettings.height}</p>
-                  )}
+                  <p>State: {connectionInfo.state}</p>
+                  <p>Socket: {connectionInfo.isConnected ? '✅' : '❌'}</p>
+                  <p>Local Stream: {connectionInfo.hasLocalStream ? '✅' : '❌'}</p>
+                  <p>Remote Stream: {connectionInfo.hasRemoteStream ? '✅' : '❌'}</p>
+                  <p>Peer: {connectionInfo.peerConnectionState || 'none'}</p>
                 </div>
               </div>
             )}
@@ -718,7 +557,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         )}
 
         {/* No Remote Stream Message */}
-        {!remoteStream && connectionStatus === 'connected' && cameraStatus === 'active' && (
+        {!remoteStream && callState === 'connected' && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
             <div className="text-center text-white">
               <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
@@ -733,9 +572,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       <div className="bg-gray-800 px-6 py-4 flex items-center justify-center space-x-4">
         <button
           onClick={toggleAudio}
+          disabled={!localStream}
           className={`p-3 rounded-full transition-colors ${
             isAudioEnabled ? 'bg-gray-600 hover:bg-gray-700' : 'bg-red-600 hover:bg-red-700'
-          }`}
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
           title={isAudioEnabled ? 'Mute microphone' : 'Unmute microphone'}
         >
           {isAudioEnabled ? (
@@ -747,9 +587,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
 
         <button
           onClick={toggleVideo}
+          disabled={!localStream}
           className={`p-3 rounded-full transition-colors ${
             isVideoEnabled ? 'bg-gray-600 hover:bg-gray-700' : 'bg-red-600 hover:bg-red-700'
-          }`}
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
           title={isVideoEnabled ? 'Turn off camera' : 'Turn on camera'}
         >
           {isVideoEnabled ? (
@@ -759,9 +600,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           )}
         </button>
 
-        {(cameraStatus === 'error' || connectionStatus === 'disconnected') && (
+        {(callState === 'error' || callState === 'disconnected') && (
           <button
-            onClick={retryConnection}
+            onClick={handleRetry}
             className="p-3 rounded-full bg-blue-600 hover:bg-blue-700 transition-colors"
             title="Retry connection"
           >
