@@ -38,14 +38,19 @@ class SocketService {
     // Reset reconnect attempts
     this.reconnectAttempts = 0;
 
-    // Connect to free Render.com deployment
-    this.socket = io('https://securecall-signaling.onrender.com', {
+    // Use your actual Render server URL
+    const serverUrl = 'https://biometricov4.onrender.com';
+    
+    this.socket = io(serverUrl, {
       query: { userId },
       transports: ['websocket', 'polling'], // Allow fallback to polling if websocket fails
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,
-      timeout: 10000
+      timeout: 20000,
+      forceNew: true,
+      upgrade: true,
+      rememberUpgrade: false
     });
 
     this.socket.on('connect', () => {

@@ -2,8 +2,8 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_ROOM_API_URL || (
   window.location.hostname === 'localhost' ? 
-  'https://localhost:3000' : // Changed from http to https
-  'https://secure-call-cmdy.onrender.com'
+  'http://localhost:3000' :
+  'https://biometricov4.onrender.com'
 );
 
 interface CreateRoomResponse {

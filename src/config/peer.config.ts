@@ -1,7 +1,7 @@
 // PeerJS server configuration
 export const peerConfig = {
   // PeerJS server configuration for production
-  SERVER_URL: 'secure-call-cmdy.onrender.com',
+  SERVER_URL: 'biometricov4.onrender.com',
   SERVER_PORT: 443,
   SERVER_PATH: '/peerjs',
   
@@ -9,7 +9,7 @@ export const peerConfig = {
   CONFIG: {
     debug: 3,
     secure: true,
-    host: 'secure-call-cmdy.onrender.com',
+    host: 'biometricov4.onrender.com',
     port: 443,
     path: '/peerjs',
     pingInterval: 3000, // Reduced ping interval for faster connection loss detection
@@ -41,7 +41,7 @@ export const getPeerServerUrl = () => {
   
   if (!isLocalhost) {
     return {
-      host: 'secure-call-cmdy.onrender.com',
+      host: 'biometricov4.onrender.com',
       port: 443,
       path: '/peerjs',
       secure: true,
