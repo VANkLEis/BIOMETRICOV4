@@ -669,7 +669,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             </div>
           )}
           
-          {cameraStatus === 'active' && (
+          {(cameraStatus === 'loading' || cameraStatus === 'active') && (
             <video
               ref={localVideoRef}
               autoPlay
