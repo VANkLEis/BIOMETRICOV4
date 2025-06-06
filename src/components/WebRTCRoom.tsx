@@ -227,6 +227,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     if (!peerConnectionRef.current) return;
     
     try {
+      // Check if the peer connection is in the correct state to receive an answer
+      if (peerConnectionRef.current.signalingState === 'stable') {
+        console.log('Peer connection already stable, ignoring duplicate answer');
+        return;
+      }
+      
       await peerConnectionRef.current.setRemoteDescription(answer);
     } catch (err) {
       console.error('Error handling answer:', err);
