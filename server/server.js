@@ -10,11 +10,13 @@ const app = express();
 const server = createServer(app);
 const port = process.env.PORT || 3000;
 
-// CORS configuration for Render deployment
+// CORS configuration for Render deployment - UPDATED with new frontend URL
 app.use(cors({
   origin: [
     'http://localhost:5173',
     'https://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://biometricov4-lunq.onrender.com', // ✅ NEW FRONTEND URL
     'https://biometricov4.onrender.com',
     /\.onrender\.com$/,
     /\.vercel\.app$/,
@@ -25,12 +27,14 @@ app.use(cors({
   credentials: true
 }));
 
-// Socket.IO configuration for secure WebSocket
+// Socket.IO configuration for secure WebSocket - UPDATED with new frontend URL
 const io = new Server(server, {
   cors: {
     origin: [
       'http://localhost:5173',
       'https://localhost:5173',
+      'http://127.0.0.1:5173',
+      'https://biometricov4-lunq.onrender.com', // ✅ NEW FRONTEND URL
       'https://biometricov4.onrender.com',
       /\.onrender\.com$/,
       /\.vercel\.app$/,
@@ -444,6 +448,7 @@ server.listen(port, () => {
   console.log(`💓 Heartbeat Interval: 3 seconds`);
   console.log(`🔄 Graceful Error Recovery: Enabled`);
   console.log(`✅ Ready for production deployment`);
+  console.log(`🌐 CORS enabled for: biometricov4-lunq.onrender.com`);
 });
 
 // Graceful shutdown

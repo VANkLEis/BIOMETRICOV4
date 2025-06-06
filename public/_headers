@@ -1,0 +1,9 @@
+# Headers for Render static site deployment
+/*
+  Permissions-Policy: camera=*, microphone=*, display-capture=*
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Embedder-Policy: credentialless
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  X-XSS-Protection: 1; mode=block

@@ -165,13 +165,18 @@ class CallManager {
   }
 
   /**
-   * Obtiene URL del servidor de señalización
+   * Obtiene URL del servidor de señalización - UPDATED for new frontend URL
    */
   _getSignalingServerUrl() {
     const isLocalhost = window.location.hostname === 'localhost' || 
                        window.location.hostname === '127.0.0.1';
     
-    return isLocalhost ? 'ws://localhost:3000' : 'wss://biometricov4.onrender.com';
+    if (isLocalhost) {
+      return 'ws://localhost:3000';
+    }
+    
+    // Use the backend server URL (not frontend URL)
+    return 'wss://biometricov4.onrender.com';
   }
 
   /**
@@ -720,41 +725,3 @@ class CallManager {
 }
 
 export default CallManager;
-
-/**
- * EJEMPLO DE USO:
- * 
- * import CallManager from './utils/callManager.js';
- * 
- * const callManager = new CallManager();
- * 
- * // Configurar callbacks
- * callManager.setCallbacks({
- *   onStateChange: (newState, oldState, data) => {
- *     console.log(`State: ${oldState} → ${newState}`, data);
- *   },
- *   onParticipantsChange: (participants) => {
- *     console.log('Participants:', participants);
- *   },
- *   onRemoteStream: (stream) => {
- *     if (stream) {
- *       remoteVideo.srcObject = stream;
- *     }
- *   },
- *   onError: (error) => {
- *     console.error('Call error:', error);
- *   }
- * });
- * 
- * // Fase 1: Unirse al room (sin medios)
- * await callManager.joinRoom('room123', 'user1', true);
- * 
- * // Fase 2: Solicitar medios (requiere click del usuario)
- * const result = await callManager.requestMedia({
- *   quality: 'medium',
- *   video: true,
- *   audio: true
- * });
- * 
- * localVideo.srcObject = result.stream;
- */
