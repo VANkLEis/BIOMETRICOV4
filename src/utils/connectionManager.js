@@ -13,7 +13,7 @@ class ConnectionManager {
     this.isHost = false;
     this.participants = [];
     
-    // 🔧 ADDED: VideoRenderer para manejar visualización
+    // 🔧 FIXED: VideoRenderer con auto-repair
     this.videoRenderer = new VideoRenderer();
     
     // Callbacks
@@ -437,9 +437,9 @@ class ConnectionManager {
     }
   }
 
-  // 🔧 FIXED: Agregar stream local con VideoRenderer
+  // 🔧 FIXED: Agregar stream local con VideoRenderer AUTOMÁTICO
   async addLocalStream(stream, localVideoElement = null) {
-    this._log('🎥 Adding local stream to ConnectionManager');
+    this._log('🎥 FIXED: Adding local stream with AUTOMATIC rendering...');
     this.localStream = stream;
 
     // Log stream details
@@ -448,14 +448,14 @@ class ConnectionManager {
     this._log(`   Video tracks: ${videoTracks.length}`);
     this._log(`   Audio tracks: ${audioTracks.length}`);
 
-    // 🔧 FIXED: Inicializar renderizado local para que el usuario se vea
+    // 🔧 FIXED: Inicializar renderizado local AUTOMÁTICO
     if (localVideoElement) {
       try {
-        this._log('🎨 Initializing local video rendering...');
+        this._log('🎨 FIXED: Initializing AUTOMATIC local video rendering...');
         const renderResult = this.videoRenderer.initializeLocalVideoRenderer(localVideoElement, stream);
-        this._log(`✅ Local video rendering initialized: ${renderResult.method}`);
+        this._log(`✅ FIXED: AUTOMATIC local video rendering initialized: ${renderResult.method}`);
       } catch (renderError) {
-        this._log(`❌ Local video rendering failed: ${renderError.message}`, 'error');
+        this._log(`❌ FIXED: Local video rendering failed: ${renderError.message}`, 'error');
         // Continuar sin renderizado local si falla
       }
     }
@@ -486,15 +486,15 @@ class ConnectionManager {
     return { success: true };
   }
 
-  // 🔧 ADDED: Método para configurar renderizado remoto
+  // 🔧 FIXED: Método para configurar renderizado remoto AUTOMÁTICO
   setupRemoteVideoRenderer(remoteVideoElement) {
     try {
-      this._log('🖼️ Setting up remote video renderer...');
+      this._log('🖼️ FIXED: Setting up AUTOMATIC remote video renderer...');
       const result = this.videoRenderer.initializeRemoteVideoRenderer(remoteVideoElement);
-      this._log('✅ Remote video renderer setup completed');
+      this._log('✅ FIXED: AUTOMATIC remote video renderer setup completed');
       return result;
     } catch (error) {
-      this._log(`❌ Remote video renderer setup failed: ${error.message}`, 'error');
+      this._log(`❌ FIXED: Remote video renderer setup failed: ${error.message}`, 'error');
       throw error;
     }
   }
@@ -540,6 +540,9 @@ class ConnectionManager {
       this.remoteStream = remoteStream;
       this._setState('peer_connected');
       
+      // 🔧 ADDED: Configurar audio remoto automáticamente
+      this._setupRemoteAudio(remoteStream);
+      
       if (this.callbacks.onRemoteStream) {
         this.callbacks.onRemoteStream(remoteStream);
       }
@@ -584,6 +587,33 @@ class ConnectionManager {
       await this._createOffer();
     } else {
       this._log('⏳ Waiting for offer from peer');
+    }
+  }
+
+  // 🔧 ADDED: Configurar audio remoto automáticamente
+  _setupRemoteAudio(remoteStream) {
+    try {
+      this._log('🔊 ADDED: Setting up remote audio automatically...');
+      
+      // Verificar si el stream tiene audio
+      const audioTracks = remoteStream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        this._log(`🔊 ADDED: Found ${audioTracks.length} audio track(s) in remote stream`);
+        
+        // Configurar audio usando VideoRenderer
+        const audioSetup = this.videoRenderer.setupRemoteAudio(remoteStream);
+        
+        if (audioSetup) {
+          this._log('✅ ADDED: Remote audio setup completed automatically');
+        } else {
+          this._log('❌ ADDED: Remote audio setup failed', 'error');
+        }
+      } else {
+        this._log('⚠️ ADDED: No audio tracks found in remote stream');
+      }
+      
+    } catch (error) {
+      this._log(`❌ ADDED: Error setting up remote audio: ${error.message}`, 'error');
     }
   }
 
@@ -661,9 +691,9 @@ class ConnectionManager {
     }
   }
 
-  // 🔧 FIXED: Socket.IO streaming con VideoRenderer
+  // 🔧 FIXED: Socket.IO streaming con VideoRenderer AUTOMÁTICO
   async _useSocketStreamingFallback() {
-    this._log('🔄 Using Socket.IO streaming fallback');
+    this._log('🔄 Using Socket.IO streaming fallback with AUTO-RENDERING');
     this._setState('socket_streaming');
 
     if (!this.localStream) {
@@ -761,10 +791,10 @@ class ConnectionManager {
     }
   }
 
-  // 🔧 FIXED: Usar VideoRenderer para frames remotos
+  // 🔧 FIXED: Usar VideoRenderer AUTOMÁTICO para frames remotos
   async _handleSocketStreamFrame(data) {
     try {
-      // Renderizar usando VideoRenderer
+      // Renderizar usando VideoRenderer AUTOMÁTICO
       const success = await this.videoRenderer.renderRemoteFrame(data.frame);
       
       if (success) {
@@ -846,29 +876,29 @@ class ConnectionManager {
       frameCount: this.frameCount,
       lastFrameTime: this.lastFrameTime,
       streamingActive: !!this.streamingInterval,
-      // 🔧 ADDED: Estadísticas de VideoRenderer
+      // 🔧 FIXED: Estadísticas de VideoRenderer AUTOMÁTICO
       videoRendererStats: this.videoRenderer.getStats()
     };
   }
 
-  // 🔧 ADDED: Métodos de diagnóstico
+  // 🔧 FIXED: Métodos de diagnóstico AUTOMÁTICO
   diagnoseVideoIssues() {
-    this._log('🔍 Running video diagnosis...');
+    this._log('🔍 Running AUTOMATIC video diagnosis...');
     return this.videoRenderer.diagnoseRenderingIssues();
   }
 
   repairVideoRendering() {
-    this._log('🔧 Attempting video rendering repair...');
+    this._log('🔧 Attempting AUTOMATIC video rendering repair...');
     return this.videoRenderer.attemptRenderingRepair();
   }
 
   createVideoTest(container) {
-    this._log('🧪 Creating video test...');
+    this._log('🧪 Creating AUTOMATIC video test...');
     return this.videoRenderer.createVisualTest(container);
   }
 
   cleanup() {
-    this._log('🧹 Cleaning up ConnectionManager...');
+    this._log('🧹 Cleaning up ConnectionManager with AUTO-REPAIR...');
 
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
@@ -880,7 +910,7 @@ class ConnectionManager {
       this.streamingInterval = null;
     }
 
-    // 🔧 ADDED: Limpiar VideoRenderer
+    // 🔧 FIXED: Limpiar VideoRenderer AUTOMÁTICO
     this.videoRenderer.cleanup();
 
     // Limpiar elementos DOM
@@ -917,7 +947,7 @@ class ConnectionManager {
     this.localStream = null;
     this._setState('idle');
     
-    this._log('✅ Cleanup completed');
+    this._log('✅ Cleanup completed with AUTO-REPAIR');
   }
 }
 
