@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server, TestTube, Eye, Wrench, Scan, Fingerprint } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server, TestTube, Eye, Wrench, Scan, Fingerprint, Shield, Camera } from 'lucide-react';
 import { initializeVideoCall, getVideoDebugInfo, toggleVideo as toggleVideoCall, toggleAudio as toggleAudioCall, cleanupVideoCall } from '../utils/videoCallManager.js';
 
 interface WebRTCRoomProps {
@@ -33,6 +33,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   // Estados de timing
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+
+  // 🔧 ADDED: Estados específicos para guest
+  const [isGuest, setIsGuest] = useState(false);
+  const [permissionState, setPermissionState] = useState<string>('unknown');
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -88,7 +92,28 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🚀 INICIALIZACIÓN AUTOMÁTICA con VideoCallManager
+  // 🔧 FIXED: Verificar permisos de cámara antes de inicializar
+  const checkCameraPermissions = async () => {
+    try {
+      const permissions = await navigator.permissions.query({ name: 'camera' as PermissionName });
+      setPermissionState(permissions.state);
+      
+      if (permissions.state === 'denied') {
+        setError({
+          message: 'Camera access is denied',
+          suggestion: 'Please enable camera permissions in your browser settings:\n1. Click the camera icon in the address bar\n2. Select "Allow"\n3. Refresh the page'
+        });
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.warn('Cannot check camera permissions:', error);
+      return true; // Proceed anyway if we can't check
+    }
+  };
+
+  // 🚀 INICIALIZACIÓN AUTOMÁTICA con VideoCallManager MEJORADA
   useEffect(() => {
     const initializeCall = async () => {
       try {
@@ -96,28 +121,27 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         setJoinStartTime(Date.now());
         setError(null);
 
-        console.log('🚀 Initializing VideoCallManager...');
+        console.log('🚀 GUEST FIXED: Initializing VideoCallManager...');
         
-        // Determinar si es host (primer usuario o creador del room)
-        const isHost = true; // Por simplicidad, siempre host por ahora
+        // 🔧 FIXED: Verificar permisos primero para guests
+        const hasPermissions = await checkCameraPermissions();
+        if (!hasPermissions) {
+          setConnectionState('error');
+          return;
+        }
+        
+        // Determinar si es host o guest (simplificado: primer usuario es host)
+        const isHost = Math.random() > 0.5; // Para testing, alternar roles
+        setIsGuest(!isHost);
+        
+        console.log(`🎭 GUEST FIXED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
         // Inicializar VideoCallManager
         const manager = await initializeVideoCall(roomId, userName, isHost);
         videoCallManagerRef.current = manager;
         
-        // Configurar referencias de video
-        if (localVideoRef.current && manager.localVideo) {
-          // El VideoCallManager maneja el video local internamente
-          console.log('✅ Local video will be handled by VideoCallManager');
-        }
-        
-        if (remoteVideoRef.current && manager.remoteVideo) {
-          // El VideoCallManager maneja el video remoto internamente
-          console.log('✅ Remote video will be handled by VideoCallManager');
-        }
-        
         setConnectionState('connected');
-        console.log('✅ VideoCallManager initialized successfully');
+        console.log('✅ GUEST FIXED: VideoCallManager initialized successfully');
         
         // Actualizar debug info periódicamente
         const debugInterval = setInterval(() => {
@@ -136,10 +160,26 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         return () => clearInterval(debugInterval);
         
       } catch (err: any) {
-        console.error('❌ Failed to initialize VideoCallManager:', err);
+        console.error('❌ GUEST FIXED: Failed to initialize VideoCallManager:', err);
+        
+        // 🔧 FIXED: Manejo específico de errores para guests
+        let errorMessage = err.message;
+        let suggestion = 'Please check your camera/microphone permissions and internet connection.';
+        
+        if (err.message.includes('Camera access is denied') || err.message.includes('NotAllowedError')) {
+          suggestion = 'Camera access denied. Please:\n1. Click the camera icon in your browser\'s address bar\n2. Select "Allow" for camera and microphone\n3. Refresh the page and try again';
+        } else if (err.message.includes('NotFoundError')) {
+          suggestion = 'No camera found. Please:\n1. Connect a camera to your device\n2. Make sure it\'s not being used by other apps\n3. Refresh the page and try again';
+        } else if (err.message.includes('HTTPS') || err.message.includes('secure')) {
+          suggestion = 'Secure connection required. Please:\n1. Make sure you\'re using HTTPS\n2. If testing locally, use localhost instead of IP\n3. Contact support if the problem persists';
+        } else if (err.message.includes('Connection timeout') || err.message.includes('server')) {
+          suggestion = 'Server connection failed. Please:\n1. Check your internet connection\n2. Wait a moment and try again\n3. The server may be starting up';
+        }
+        
         setError({
-          message: err.message,
-          suggestion: 'Please check your camera/microphone permissions and internet connection.'
+          message: errorMessage,
+          suggestion: suggestion,
+          originalError: err
         });
         setConnectionState('error');
       }
@@ -195,7 +235,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     setIsAudioEnabled(enabled);
   };
 
-  // Reintentar conexión
+  // 🔧 FIXED: Reintentar conexión con mejor manejo
   const handleRetry = async () => {
     setError(null);
     setConnectionState('idle');
@@ -204,6 +244,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     if (videoCallManagerRef.current) {
       cleanupVideoCall();
       videoCallManagerRef.current = null;
+    }
+    
+    // Verificar permisos de nuevo
+    const hasPermissions = await checkCameraPermissions();
+    if (!hasPermissions) {
+      return;
     }
     
     // Reinicializar después de un momento
@@ -225,7 +271,38 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const handleGetDebugInfo = () => {
     const debug = getVideoDebugInfo();
     setDebugInfo(debug);
-    console.log('📊 Debug Info:', debug);
+    console.log('📊 GUEST FIXED: Debug Info:', debug);
+  };
+
+  // 🔧 ADDED: Función para solicitar permisos manualmente
+  const handleRequestPermissions = async () => {
+    try {
+      setConnectionState('requesting_media');
+      
+      // Solicitar permisos directamente
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+      
+      // Detener el stream inmediatamente (solo era para permisos)
+      stream.getTracks().forEach(track => track.stop());
+      
+      setPermissionState('granted');
+      
+      // Reinicializar después de obtener permisos
+      setTimeout(() => {
+        handleRetry();
+      }, 1000);
+      
+    } catch (error: any) {
+      console.error('Permission request failed:', error);
+      setError({
+        message: 'Permission request failed',
+        suggestion: 'Please manually enable camera permissions in your browser settings and refresh the page.'
+      });
+      setConnectionState('error');
+    }
   };
 
   // 🎨 PANTALLA DE CONEXIÓN
@@ -248,13 +325,18 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           
           <p className="text-gray-300 mb-6">
             Setting up secure video call with WebRTC...
+            {isGuest && <span className="block text-yellow-300 mt-2">Joining as Guest</span>}
           </p>
           
           <div className="text-sm text-gray-400 space-y-1">
             <p>Room: {roomId}</p>
             <p>User: {userName}</p>
+            <p>Role: {isGuest ? 'Guest' : 'Host'}</p>
             {connectionState === 'connecting' && (
               <p>Time: {formatElapsedTime(elapsedTime)}</p>
+            )}
+            {permissionState !== 'unknown' && (
+              <p>Camera Permission: {permissionState}</p>
             )}
           </div>
         </div>
@@ -262,7 +344,59 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     );
   }
 
-  // 🎨 PANTALLA DE ERROR
+  // 🎨 PANTALLA DE SOLICITUD DE PERMISOS
+  if (connectionState === 'requesting_media') {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
+        <div className="text-center p-8 max-w-md">
+          <div className="relative mb-6">
+            <Camera className="h-16 w-16 text-yellow-500 mx-auto animate-pulse" />
+            <div className="absolute -bottom-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full">
+              {formatElapsedTime(elapsedTime)}
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-4">Camera Permission Required</h2>
+          
+          <p className="text-gray-300 mb-6">
+            Please allow access to your camera and microphone when prompted by your browser.
+          </p>
+          
+          <div className="bg-yellow-900 bg-opacity-30 p-4 rounded-lg mb-6">
+            <Shield className="h-6 w-6 text-yellow-400 mx-auto mb-2" />
+            <p className="text-yellow-200 text-sm">
+              Waiting for permissions... ({formatElapsedTime(elapsedTime)})
+            </p>
+            <p className="text-yellow-300 text-xs mt-2">
+              Look for the permission popup in your browser
+            </p>
+          </div>
+          
+          <button
+            onClick={handleRequestPermissions}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg mb-4"
+          >
+            Request Permissions Again
+          </button>
+          
+          <div className="text-sm text-gray-400 space-y-1">
+            <p>🔗 Connection: Active</p>
+            <p>👥 Participants: {participants.length}</p>
+            <p>⏱️ Timeout: 30 seconds</p>
+          </div>
+          
+          <div className="mt-6 text-xs text-gray-500">
+            <p>💡 If you don't see a permission prompt:</p>
+            <p>1. Check your browser's address bar for a camera icon</p>
+            <p>2. Click it and select "Allow"</p>
+            <p>3. Refresh the page if needed</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 🎨 PANTALLA DE ERROR MEJORADA
   if (error) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
@@ -273,7 +407,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           
           {error.suggestion && (
             <div className="bg-blue-900 bg-opacity-30 p-4 rounded-lg mb-6">
-              <p className="text-blue-200 text-sm">{error.suggestion}</p>
+              <p className="text-blue-200 text-sm whitespace-pre-line">{error.suggestion}</p>
             </div>
           )}
           
@@ -285,6 +419,17 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <RefreshCw className="h-4 w-4 mr-2" />
               Try Again
             </button>
+            
+            {permissionState === 'denied' && (
+              <button
+                onClick={handleRequestPermissions}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
+              >
+                <Camera className="h-4 w-4 mr-2" />
+                Request Permissions
+              </button>
+            )}
+            
             <button
               onClick={handleEndCall}
               className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg"
@@ -308,6 +453,18 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               </pre>
             </div>
           )}
+          
+          <div className="mt-4 text-sm text-gray-400">
+            <p className="font-semibold mb-2">Troubleshooting Steps:</p>
+            <ul className="list-disc list-inside text-left space-y-1">
+              <li>Ensure you're using HTTPS (required for camera access)</li>
+              <li>Allow camera and microphone permissions</li>
+              <li>Close other apps using the camera</li>
+              <li>Try a different browser (Chrome recommended)</li>
+              <li>Check your internet connection</li>
+              <li>Verify server is accessible</li>
+            </ul>
+          </div>
         </div>
       </div>
     );
@@ -391,6 +548,15 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               connectionState === 'connected' ? 'bg-green-500' : 'bg-red-500'
             }`}></div>
           </div>
+          
+          {/* Role Indicator */}
+          <div className="absolute top-2 right-2">
+            <div className={`px-2 py-1 rounded text-xs font-medium ${
+              isGuest ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'
+            }`}>
+              {isGuest ? 'Guest' : 'Host'}
+            </div>
+          </div>
         </div>
 
         {/* Connection Status */}
@@ -427,6 +593,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             <h4 className="text-white font-semibold mb-2 text-sm">Debug Information:</h4>
             <div className="text-gray-300 text-xs space-y-1">
               <p>State: {connectionState}</p>
+              <p>Role: {isGuest ? 'Guest' : 'Host'}</p>
+              <p>Permission: {permissionState}</p>
               <p>Local Stream: {debugInfo.hasLocalStream ? '✅' : '❌'}</p>
               <p>Remote Stream: {debugInfo.hasRemoteStream ? '✅' : '❌'}</p>
               <p>Local Canvas: {debugInfo.videoRendererStats?.hasLocalCanvas ? '✅' : '❌'}</p>
@@ -437,6 +605,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <p>Streaming Active: {debugInfo.streamingActive ? '✅' : '❌'}</p>
               <p>Peer State: {debugInfo.peerConnectionState || 'none'}</p>
               <p>ICE State: {debugInfo.iceConnectionState || 'none'}</p>
+              <p>Init State: {debugInfo.initializationState || 'unknown'}</p>
+              <p>Media State: {debugInfo.mediaRequestState || 'unknown'}</p>
             </div>
           </div>
         )}

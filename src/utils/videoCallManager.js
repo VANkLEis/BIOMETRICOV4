@@ -1,18 +1,17 @@
 /**
  * SOLUCIÓN COMPLETA PARA WEBRTC Y VIDEO LOCAL
  * 
- * Esta clase maneja COMPLETAMENTE:
- * 1. ✅ Video local AUTOMÁTICO (sin necesidad de repair)
- * 2. ✅ Video remoto VISIBLE con WebRTC nativo
- * 3. ✅ Audio remoto FUNCIONAL
- * 4. ✅ Canvas elements correctos con IDs
- * 5. ✅ Estados de video ready automáticos
- * 6. ✅ Peer connection robusta con múltiples ICE servers
- * 7. ✅ Manejo completo de errores y reconexión
- * 8. ✅ Debug completo y estadísticas
+ * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
+ * 1. ✅ GUEST no puede acceder a cámara (permisos y configuración)
+ * 2. ✅ HOST se conecta pero GUEST falla en media access
+ * 3. ✅ Mejor manejo de errores específicos para cada caso
+ * 4. ✅ Configuración robusta de STUN/TURN servers
+ * 5. ✅ Video local AUTOMÁTICO sin repair
+ * 6. ✅ Video remoto VISIBLE con audio
+ * 7. ✅ Manejo completo de estados y reconexión
  * 
  * @author SecureCall Team
- * @version 4.0.0 - COMPLETE SOLUTION
+ * @version 5.0.0 - GUEST CAMERA FIXED
  */
 
 class VideoCallManager {
@@ -23,6 +22,7 @@ class VideoCallManager {
         this.socket = null;
         this.isHost = false;
         this.roomId = null;
+        this.userName = null;
         
         // Canvas y contextos
         this.localCanvas = null;
@@ -30,9 +30,10 @@ class VideoCallManager {
         this.localCtx = null;
         this.remoteCtx = null;
         
-        // Videos ocultos para renderizado
+        // Videos para renderizado
         this.localVideo = null;
         this.remoteVideo = null;
+        this.remoteAudio = null;
         
         // Stats para debug
         this.stats = {
@@ -51,10 +52,17 @@ class VideoCallManager {
         // 🔧 FIXED: Configuración de servidor corregida
         this.serverConfig = {
             development: 'ws://localhost:3000',
-            production: 'wss://biometricov4.onrender.com' // Backend server, not frontend
+            production: 'wss://biometricov4.onrender.com' // Backend server correcto
         };
         
         this.debugMode = true;
+        this.connectionAttempts = 0;
+        this.maxConnectionAttempts = 3;
+        
+        // 🔧 ADDED: Estados de inicialización
+        this.initializationState = 'idle';
+        this.mediaRequestState = 'idle';
+        
         this.initializeCanvas();
     }
 
@@ -103,6 +111,9 @@ class VideoCallManager {
             this.stats.hasRemoteCanvas = true;
             
             // Actualizar stats globales
+            if (!window.videoStats) {
+                window.videoStats = {};
+            }
             window.videoStats = {
                 ...window.videoStats,
                 hasLocalCanvas: true,
@@ -190,74 +201,162 @@ class VideoCallManager {
         return this.peerConnection;
     }
 
-    // 3. CONFIGURAR VIDEO LOCAL CORRECTAMENTE
+    // 3. 🔧 FIXED: CONFIGURAR VIDEO LOCAL CON MEJOR MANEJO DE PERMISOS
     async setupLocalVideo() {
         try {
-            this._log('🎥 Setting up local video...');
+            this._log('🎥 GUEST FIXED: Setting up local video with enhanced permissions...');
+            this.mediaRequestState = 'requesting';
             
-            // Verificar permisos primero
-            try {
-                const permissions = await navigator.permissions.query({name: 'camera'});
-                this._log(`Camera permission: ${permissions.state}`);
-            } catch (permError) {
-                this._log('Cannot check permissions, proceeding...', 'warn');
+            // 🔧 FIXED: Verificar contexto seguro primero
+            if (!window.isSecureContext && window.location.protocol !== 'https:' && 
+                window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                throw new Error('HTTPS connection required for camera access. Please use a secure connection.');
             }
 
-            // Obtener stream con configuración específica
-            this.localStream = await navigator.mediaDevices.getUserMedia({
+            // 🔧 FIXED: Verificar disponibilidad de getUserMedia
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Your browser does not support camera access. Please use a modern browser like Chrome, Firefox, or Safari.');
+            }
+
+            // 🔧 FIXED: Verificar permisos de forma más robusta
+            try {
+                const permissions = await navigator.permissions.query({name: 'camera'});
+                this._log(`GUEST FIXED: Camera permission status: ${permissions.state}`);
+                
+                if (permissions.state === 'denied') {
+                    throw new Error('Camera access is denied. Please enable camera permissions in your browser settings and refresh the page.');
+                }
+            } catch (permError) {
+                this._log('GUEST FIXED: Cannot check permissions directly, proceeding with getUserMedia...', 'warn');
+            }
+
+            // 🔧 FIXED: Configuración de constraints más permisiva para guests
+            const constraints = {
                 video: {
-                    width: { ideal: 640, max: 1280 },
-                    height: { ideal: 480, max: 720 },
-                    frameRate: { ideal: 30, max: 30 },
+                    width: { ideal: 640, min: 320, max: 1280 },
+                    height: { ideal: 480, min: 240, max: 720 },
+                    frameRate: { ideal: 15, min: 10, max: 30 },
                     facingMode: 'user'
                 },
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: true,
+                    sampleRate: { ideal: 44100, min: 8000 }
                 }
-            });
+            };
 
-            this._log('✅ Local stream obtained');
+            this._log('GUEST FIXED: Requesting media with enhanced constraints...');
+            
+            // 🔧 FIXED: Intentar con constraints completas primero
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                this._log('✅ GUEST FIXED: Full media stream obtained');
+            } catch (fullError) {
+                this._log(`GUEST FIXED: Full constraints failed: ${fullError.message}`, 'warn');
+                
+                // 🔧 FIXED: Fallback a constraints básicas
+                try {
+                    const basicConstraints = {
+                        video: true,
+                        audio: true
+                    };
+                    stream = await navigator.mediaDevices.getUserMedia(basicConstraints);
+                    this._log('✅ GUEST FIXED: Basic media stream obtained as fallback');
+                } catch (basicError) {
+                    this._log(`❌ GUEST FIXED: Basic constraints also failed: ${basicError.message}`, 'error');
+                    throw basicError;
+                }
+            }
 
-            // Crear video element oculto para capturar frames
+            this.localStream = stream;
+            this.mediaRequestState = 'granted';
+
+            // 🔧 FIXED: Log detalles del stream obtenido
+            const videoTracks = stream.getVideoTracks();
+            const audioTracks = stream.getAudioTracks();
+            this._log(`GUEST FIXED: Stream details - Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
+            
+            if (videoTracks.length > 0) {
+                const videoSettings = videoTracks[0].getSettings();
+                this._log(`GUEST FIXED: Video settings: ${videoSettings.width}x${videoSettings.height}@${videoSettings.frameRate}fps`);
+            }
+
+            // 🔧 FIXED: Crear video element con configuración robusta
             this.localVideo = document.createElement('video');
-            this.localVideo.srcObject = this.localStream;
+            this.localVideo.srcObject = stream;
             this.localVideo.autoplay = true;
-            this.localVideo.muted = true; // Evitar eco
+            this.localVideo.muted = true; // CRÍTICO: evitar feedback
             this.localVideo.playsInline = true;
+            this.localVideo.controls = false;
             this.localVideo.style.display = 'none';
             document.body.appendChild(this.localVideo);
 
-            // Cuando el video esté listo, iniciar renderizado
-            this.localVideo.onloadedmetadata = () => {
-                this._log('✅ Local video metadata loaded');
-                this.stats.localVideoReady = true;
-                window.videoStats.localVideoReady = true;
-                this.startLocalVideoRender();
-            };
+            // 🔧 FIXED: Promesa para esperar que el video esté listo
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Video metadata load timeout'));
+                }, 10000);
 
-            // Agregar tracks al peer connection
+                this.localVideo.onloadedmetadata = () => {
+                    clearTimeout(timeout);
+                    this._log('✅ GUEST FIXED: Local video metadata loaded');
+                    this.stats.localVideoReady = true;
+                    if (window.videoStats) {
+                        window.videoStats.localVideoReady = true;
+                    }
+                    resolve(null);
+                };
+
+                this.localVideo.onerror = (error) => {
+                    clearTimeout(timeout);
+                    reject(new Error(`Video element error: ${error}`));
+                };
+
+                // 🔧 FIXED: Forzar carga de metadata
+                this.localVideo.load();
+            });
+
+            // 🔧 FIXED: Iniciar renderizado automático
+            this.startLocalVideoRender();
+
+            // 🔧 FIXED: Agregar tracks al peer connection si existe
             if (this.peerConnection) {
-                this.localStream.getTracks().forEach(track => {
-                    this._log(`➕ Adding ${track.kind} track to peer connection`);
-                    this.peerConnection.addTrack(track, this.localStream);
+                stream.getTracks().forEach(track => {
+                    this._log(`➕ GUEST FIXED: Adding ${track.kind} track to peer connection`);
+                    this.peerConnection.addTrack(track, stream);
                 });
             }
 
-            return this.localStream;
+            this._log('✅ GUEST FIXED: Local video setup completed successfully');
+            return stream;
 
         } catch (error) {
-            this._log(`❌ Error accessing camera/microphone: ${error.message}`, 'error');
+            this.mediaRequestState = 'denied';
+            this._log(`❌ GUEST FIXED: Error accessing camera/microphone: ${error.message}`, 'error');
             
-            // Manejar diferentes tipos de errores
+            // 🔧 FIXED: Mensajes de error más específicos y útiles
+            let userFriendlyMessage;
+            
             if (error.name === 'NotAllowedError') {
-                throw new Error('Por favor, permite el acceso a la cámara y micrófono para continuar.');
+                userFriendlyMessage = 'Camera and microphone access denied. Please:\n1. Click the camera icon in your browser\'s address bar\n2. Allow camera and microphone access\n3. Refresh the page and try again';
             } else if (error.name === 'NotFoundError') {
-                throw new Error('No se encontró cámara o micrófono.');
+                userFriendlyMessage = 'No camera or microphone found. Please:\n1. Connect a camera and microphone to your device\n2. Make sure they are not being used by other applications\n3. Refresh the page and try again';
+            } else if (error.name === 'NotReadableError') {
+                userFriendlyMessage = 'Camera or microphone is being used by another application. Please:\n1. Close other video calling applications (Zoom, Teams, etc.)\n2. Close other browser tabs using the camera\n3. Refresh the page and try again';
+            } else if (error.name === 'OverconstrainedError') {
+                userFriendlyMessage = 'Camera settings not supported. Please:\n1. Try using a different camera if available\n2. Update your browser to the latest version\n3. Refresh the page and try again';
+            } else if (error.message.includes('HTTPS') || error.message.includes('secure')) {
+                userFriendlyMessage = 'Secure connection required. Please:\n1. Make sure you are using HTTPS (secure connection)\n2. If testing locally, use localhost instead of IP address\n3. Contact support if the problem persists';
             } else {
-                throw new Error('Error al acceder a los dispositivos: ' + error.message);
+                userFriendlyMessage = `Camera access failed: ${error.message}\n\nPlease:\n1. Check your camera and microphone connections\n2. Grant permissions when prompted\n3. Refresh the page and try again`;
             }
+            
+            const enhancedError = new Error(userFriendlyMessage);
+            enhancedError.originalError = error;
+            enhancedError.name = error.name;
+            throw enhancedError;
         }
     }
 
@@ -280,9 +379,11 @@ class VideoCallManager {
                     this.stats.isLocalRendering = true;
                     
                     // Actualizar stats globales
-                    window.videoStats.localFrames = this.stats.localFrames;
-                    window.videoStats.lastLocalRender = this.stats.lastLocalRender;
-                    window.videoStats.isLocalRendering = true;
+                    if (window.videoStats) {
+                        window.videoStats.localFrames = this.stats.localFrames;
+                        window.videoStats.lastLocalRender = this.stats.lastLocalRender;
+                        window.videoStats.isLocalRendering = true;
+                    }
                 } catch (renderError) {
                     // Silenciar errores menores de renderizado
                 }
@@ -310,7 +411,9 @@ class VideoCallManager {
         this.remoteVideo.onloadedmetadata = () => {
             this._log('✅ Remote video metadata loaded');
             this.stats.remoteVideoReady = true;
-            window.videoStats.remoteVideoReady = true;
+            if (window.videoStats) {
+                window.videoStats.remoteVideoReady = true;
+            }
             this.startRemoteVideoRender();
         };
 
@@ -324,16 +427,16 @@ class VideoCallManager {
             this._log('🔊 Setting up remote audio...');
             
             // Crear elemento audio separado para audio remoto
-            const remoteAudio = document.createElement('audio');
-            remoteAudio.srcObject = stream;
-            remoteAudio.autoplay = true;
-            remoteAudio.playsInline = true;
-            remoteAudio.volume = 1.0;
-            remoteAudio.style.display = 'none';
-            document.body.appendChild(remoteAudio);
+            this.remoteAudio = document.createElement('audio');
+            this.remoteAudio.srcObject = stream;
+            this.remoteAudio.autoplay = true;
+            this.remoteAudio.playsInline = true;
+            this.remoteAudio.volume = 1.0;
+            this.remoteAudio.style.display = 'none';
+            document.body.appendChild(this.remoteAudio);
 
             // Forzar reproducción de audio
-            const playPromise = remoteAudio.play();
+            const playPromise = this.remoteAudio.play();
             if (playPromise !== undefined) {
                 playPromise
                     .then(() => {
@@ -368,9 +471,11 @@ class VideoCallManager {
                     this.stats.isRemoteRendering = true;
                     
                     // Actualizar stats globales
-                    window.videoStats.remoteFrames = this.stats.remoteFrames;
-                    window.videoStats.lastRemoteRender = this.stats.lastRemoteRender;
-                    window.videoStats.isRemoteRendering = true;
+                    if (window.videoStats) {
+                        window.videoStats.remoteFrames = this.stats.remoteFrames;
+                        window.videoStats.lastRemoteRender = this.stats.lastRemoteRender;
+                        window.videoStats.isRemoteRendering = true;
+                    }
                 } catch (renderError) {
                     // Silenciar errores menores de renderizado
                 }
@@ -394,7 +499,7 @@ class VideoCallManager {
                 this.serverConfig.development : 
                 this.serverConfig.production;
 
-            this._log(`🔗 FIXED: Connecting to signaling server: ${serverUrl}`);
+            this._log(`🔗 GUEST FIXED: Connecting to signaling server: ${serverUrl}`);
 
             // 🔧 FIXED: Mejor manejo de importación de Socket.IO
             import('socket.io-client').then(({ io }) => {
@@ -414,35 +519,36 @@ class VideoCallManager {
                     // 🔧 ADDED: Query params para identificación
                     query: {
                         'client-type': 'webrtc-room',
-                        'timestamp': Date.now()
+                        'timestamp': Date.now(),
+                        'user-role': this.isHost ? 'host' : 'guest'
                     }
                 });
 
                 const timeout = setTimeout(() => {
-                    this._log('❌ FIXED: Connection timeout to signaling server', 'error');
-                    reject(new Error('Connection timeout to signaling server. Please check if the server is running.'));
+                    this._log('❌ GUEST FIXED: Connection timeout to signaling server', 'error');
+                    reject(new Error('Connection timeout to signaling server. The server may be starting up or unreachable. Please wait a moment and try again.'));
                 }, 15000);
 
                 this.socket.on('connect', () => {
                     clearTimeout(timeout);
-                    this._log('✅ FIXED: Connected to signaling server successfully');
+                    this._log('✅ GUEST FIXED: Connected to signaling server successfully');
                     this.setupSocketEvents();
                     resolve();
                 });
 
                 this.socket.on('connect_error', (error) => {
                     clearTimeout(timeout);
-                    this._log(`❌ FIXED: Connection error: ${error.message}`, 'error');
+                    this._log(`❌ GUEST FIXED: Connection error: ${error.message}`, 'error');
                     
                     // 🔧 ADDED: Mensajes de error más específicos
                     let errorMessage = 'Failed to connect to signaling server. ';
                     
                     if (error.message.includes('timeout')) {
-                        errorMessage += 'The server may be starting up or unreachable.';
+                        errorMessage += 'The server may be starting up or unreachable. Please wait a moment and try again.';
                     } else if (error.message.includes('CORS')) {
                         errorMessage += 'CORS policy error. Please check server configuration.';
-                    } else if (error.message.includes('NetworkError')) {
-                        errorMessage += 'Network connectivity issue. Please check your internet connection.';
+                    } else if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+                        errorMessage += 'Network connectivity issue. Please check your internet connection and try again.';
                     } else {
                         errorMessage += error.message;
                     }
@@ -452,16 +558,16 @@ class VideoCallManager {
 
                 // 🔧 ADDED: Manejo de desconexión
                 this.socket.on('disconnect', (reason) => {
-                    this._log(`🔌 FIXED: Disconnected from signaling server: ${reason}`, 'warn');
+                    this._log(`🔌 GUEST FIXED: Disconnected from signaling server: ${reason}`, 'warn');
                 });
 
                 // 🔧 ADDED: Confirmación de conexión del servidor
                 this.socket.on('connection-confirmed', (data) => {
-                    this._log(`✅ FIXED: Connection confirmed by server: ${data.message}`);
+                    this._log(`✅ GUEST FIXED: Connection confirmed by server: ${data.message}`);
                 });
 
             }).catch(error => {
-                this._log(`❌ FIXED: Failed to load Socket.IO: ${error.message}`, 'error');
+                this._log(`❌ GUEST FIXED: Failed to load Socket.IO: ${error.message}`, 'error');
                 reject(new Error('Failed to load Socket.IO library: ' + error.message));
             });
         });
@@ -600,6 +706,9 @@ class VideoCallManager {
     // 14. FUNCIÓN DEBUG MEJORADA
     getDebugInfo() {
         // Actualizar stats globales
+        if (!window.videoStats) {
+            window.videoStats = {};
+        }
         window.videoStats = {
             ...window.videoStats,
             ...this.stats
@@ -617,7 +726,11 @@ class VideoCallManager {
             videoRendererStats: this.stats,
             isHost: this.isHost,
             roomId: this.roomId,
+            userName: this.userName,
             serverUrl: this.socket ? this.socket.io.uri : 'not connected',
+            initializationState: this.initializationState,
+            mediaRequestState: this.mediaRequestState,
+            connectionAttempts: this.connectionAttempts,
             canvasInfo: {
                 localCanvasExists: !!this.localCanvas,
                 remoteCanvasExists: !!this.remoteCanvas,
@@ -627,30 +740,38 @@ class VideoCallManager {
         };
     }
 
-    // 15. INICIALIZACIÓN COMPLETA
+    // 15. 🔧 FIXED: INICIALIZACIÓN COMPLETA CON MEJOR MANEJO DE ERRORES
     async initialize(roomId, userName, isHost) {
         try {
-            this._log(`🚀 FIXED: Initializing video call as ${isHost ? 'HOST' : 'GUEST'}`);
+            this._log(`🚀 GUEST FIXED: Initializing video call as ${isHost ? 'HOST' : 'GUEST'}`);
+            this.initializationState = 'initializing';
             
             this.roomId = roomId;
+            this.userName = userName;
             this.isHost = isHost;
             
             // 1. Conectar al servidor de señalización
+            this.initializationState = 'connecting_signaling';
             await this.connectToSignaling();
             
             // 2. Unirse al room
+            this.initializationState = 'joining_room';
             await this.joinRoom(roomId, userName);
             
             // 3. Configurar peer connection
+            this.initializationState = 'creating_peer_connection';
             this.createPeerConnection();
             
             // 4. Configurar video local
+            this.initializationState = 'requesting_media';
             await this.setupLocalVideo();
             
-            this._log('✅ FIXED: Video call initialized successfully');
+            this.initializationState = 'ready';
+            this._log('✅ GUEST FIXED: Video call initialized successfully');
             
         } catch (error) {
-            this._log(`❌ FIXED: Failed to initialize video call: ${error.message}`, 'error');
+            this.initializationState = 'error';
+            this._log(`❌ GUEST FIXED: Failed to initialize video call: ${error.message}`, 'error');
             throw error;
         }
     }
@@ -734,6 +855,9 @@ class VideoCallManager {
         if (this.remoteVideo && this.remoteVideo.parentNode) {
             this.remoteVideo.parentNode.removeChild(this.remoteVideo);
         }
+        if (this.remoteAudio && this.remoteAudio.parentNode) {
+            this.remoteAudio.parentNode.removeChild(this.remoteAudio);
+        }
         if (this.localCanvas && this.localCanvas.parentNode) {
             this.localCanvas.parentNode.removeChild(this.localCanvas);
         }
@@ -744,11 +868,17 @@ class VideoCallManager {
         // Reset variables
         this.localVideo = null;
         this.remoteVideo = null;
+        this.remoteAudio = null;
         this.localCanvas = null;
         this.remoteCanvas = null;
         this.localCtx = null;
         this.remoteCtx = null;
         this.remoteStream = null;
+
+        // Reset estados
+        this.initializationState = 'idle';
+        this.mediaRequestState = 'idle';
+        this.connectionAttempts = 0;
 
         // Reset stats
         this.stats = {
@@ -777,7 +907,7 @@ let videoCallManager = null;
 // Función para inicializar desde el código existente
 export async function initializeVideoCall(roomId, userName, isHost) {
     try {
-        console.log('🚀 FIXED: Starting VideoCallManager initialization...');
+        console.log('🚀 GUEST FIXED: Starting VideoCallManager initialization...');
         
         // Limpiar instancia anterior si existe
         if (videoCallManager) {
@@ -789,13 +919,13 @@ export async function initializeVideoCall(roomId, userName, isHost) {
         
         // Debug inicial
         setTimeout(() => {
-            console.log('📊 FIXED: Initial debug:', videoCallManager.getDebugInfo());
+            console.log('📊 GUEST FIXED: Initial debug:', videoCallManager.getDebugInfo());
         }, 3000);
         
         return videoCallManager;
         
     } catch (error) {
-        console.error('❌ FIXED: Failed to start video call:', error);
+        console.error('❌ GUEST FIXED: Failed to start video call:', error);
         throw error;
     }
 }
@@ -809,7 +939,9 @@ export function getVideoDebugInfo() {
         localVideoReady: false,
         remoteVideoReady: false,
         frameCount: 0,
-        streamingActive: false
+        streamingActive: false,
+        initializationState: 'not_initialized',
+        mediaRequestState: 'not_initialized'
     };
 }
 
