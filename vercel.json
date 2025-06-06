@@ -12,11 +12,15 @@
       "headers": [
         {
           "key": "Permissions-Policy",
-          "value": "camera=*, microphone=*, display-capture=*"
+          "value": "camera=*, microphone=*, display-capture=*, geolocation=(), payment=(), usb=()"
+        },
+        {
+          "key": "Feature-Policy",
+          "value": "camera *; microphone *; display-capture *"
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' wss: https:; frame-src 'self';"
+          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: wss: https:; media-src 'self' blob: data: https: mediastream:; connect-src 'self' wss: https: ws:; frame-src 'self' https:; worker-src 'self' blob:;"
         },
         {
           "key": "Cross-Origin-Embedder-Policy",
@@ -25,6 +29,10 @@
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin-allow-popups"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
         }
       ]
     }
