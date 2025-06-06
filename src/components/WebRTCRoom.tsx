@@ -867,6 +867,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <li>Try using a different browser (Chrome, Firefox, Safari)</li>
               <li>Disable browser extensions that might block camera access</li>
               <li>Check if your Render server (biometricov4.onrender.com) is accessible</li>
+              <li>Check your operating system's privacy settings to ensure camera and microphone access is allowed for your browser</li>
+              <li>Verify that your camera and microphone hardware are functioning correctly and their drivers are up to date</li>
+              <li>Try restarting your browser or computer to resolve temporary issues</li>
             </ul>
           </div>
         </div>
