@@ -49,9 +49,9 @@ class ConnectionManager {
           credential: 'openrelayproject'
         }
       ],
-      connectionTimeout: 15000,
-      reconnectAttempts: 5,
-      reconnectDelay: 2000
+      connectionTimeout: 10000, // Reduced from 15000
+      reconnectAttempts: 3, // Reduced from 5
+      reconnectDelay: 1000 // Reduced from 2000
     };
     
     this.debugMode = true;
@@ -89,54 +89,118 @@ class ConnectionManager {
         message: error.message,
         context,
         state: this.connectionState,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        suggestion: this._getErrorSuggestion(error, context)
       });
     }
   }
 
+  _getErrorSuggestion(error, context) {
+    if (context === 'connectToSignaling' || context === 'joinRoom') {
+      if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
+        return 'The signaling server is not running. Please start the server by running "npm run dev" in the server directory.';
+      }
+      if (error.message.includes('CORS')) {
+        return 'CORS error detected. Please check server configuration.';
+      }
+    }
+    return 'Please check your internet connection and try again.';
+  }
+
   /**
-   * Conecta al servidor de señalización
+   * Conecta al servidor de señalización con múltiples intentos
    */
   async connectToSignaling() {
+    const servers = this._getServerUrls();
+    
+    for (let i = 0; i < servers.length; i++) {
+      const serverUrl = servers[i];
+      this._log(`Attempting connection ${i + 1}/${servers.length} to: ${serverUrl}`);
+      
+      try {
+        await this._tryConnectToServer(serverUrl);
+        this._log(`✅ Successfully connected to: ${serverUrl}`);
+        return;
+      } catch (error) {
+        this._log(`❌ Failed to connect to ${serverUrl}: ${error.message}`, 'warn');
+        
+        if (i === servers.length - 1) {
+          // Last attempt failed
+          throw new Error(`Failed to connect to any signaling server. Last error: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  _getServerUrls() {
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1';
+    
+    if (isLocalhost) {
+      // Try multiple local configurations
+      return [
+        'http://localhost:3000',  // HTTP first for local development
+        'ws://localhost:3000',    // WebSocket
+        'https://biometricov4.onrender.com' // Fallback to production
+      ];
+    } else {
+      // Production - try HTTPS first
+      return [
+        'https://biometricov4.onrender.com',
+        'wss://biometricov4.onrender.com'
+      ];
+    }
+  }
+
+  async _tryConnectToServer(serverUrl) {
     return new Promise((resolve, reject) => {
-      const serverUrl = this._getServerUrl();
       this._log(`Connecting to signaling server: ${serverUrl}`);
+      
+      // Clean up existing socket
+      if (this.socket) {
+        this.socket.disconnect();
+        this.socket = null;
+      }
       
       this.socket = io(serverUrl, {
         transports: ['websocket', 'polling'],
         upgrade: true,
         rememberUpgrade: false,
-        timeout: 20000,
+        timeout: this.config.connectionTimeout,
         forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: this.config.reconnectAttempts,
-        reconnectionDelay: this.config.reconnectDelay
+        reconnection: false, // We handle reconnection manually
+        autoConnect: true
       });
 
       const timeout = setTimeout(() => {
-        reject(new Error('Connection timeout'));
+        if (this.socket) {
+          this.socket.disconnect();
+        }
+        reject(new Error(`Connection timeout after ${this.config.connectionTimeout}ms`));
       }, this.config.connectionTimeout);
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
-        this._log('✅ Connected to signaling server');
+        this._log(`✅ Connected to signaling server: ${serverUrl}`);
         this._setupSocketListeners();
         resolve();
       });
 
       this.socket.on('connect_error', (error) => {
         clearTimeout(timeout);
-        this._log(`Connection error: ${error.message}`, 'error');
+        this._log(`Connection error to ${serverUrl}: ${error.message}`, 'error');
         reject(error);
       });
-    });
-  }
 
-  _getServerUrl() {
-    const isLocalhost = window.location.hostname === 'localhost' || 
-                       window.location.hostname === '127.0.0.1';
-    
-    return isLocalhost ? 'ws://localhost:3000' : 'wss://biometricov4.onrender.com';
+      this.socket.on('disconnect', (reason) => {
+        clearTimeout(timeout);
+        this._log(`Disconnected from ${serverUrl}: ${reason}`, 'warn');
+        if (reason !== 'io client disconnect') {
+          // Unexpected disconnect
+          this._setState('disconnected');
+        }
+      });
+    });
   }
 
   _setupSocketListeners() {
@@ -190,15 +254,19 @@ class ConnectionManager {
       this._handleSocketStream(data);
     });
 
-    this.socket.on('disconnect', () => {
-      this._log('Disconnected from signaling server', 'warn');
+    this.socket.on('disconnect', (reason) => {
+      this._log(`Disconnected from signaling server: ${reason}`, 'warn');
       this._setState('disconnected');
-      this._attemptReconnect();
+      
+      // Only attempt reconnect for unexpected disconnections
+      if (reason !== 'io client disconnect') {
+        this._attemptReconnect();
+      }
     });
   }
 
   /**
-   * Se une a un room
+   * Se une a un room con mejor manejo de errores
    */
   async joinRoom(roomId, userName, isHost = false) {
     try {
@@ -207,15 +275,40 @@ class ConnectionManager {
       this.userName = userName;
       this.isHost = isHost;
 
+      // Verificar si ya estamos conectados
       if (!this.socket || !this.socket.connected) {
+        this._log('Socket not connected, attempting to connect...');
         await this.connectToSignaling();
+      }
+
+      // Verificar conexión después del intento
+      if (!this.socket || !this.socket.connected) {
+        throw new Error('Unable to establish connection to signaling server');
       }
 
       this._log(`Joining room: ${roomId} as ${userName}`);
       
-      this.socket.emit('join-room', { 
-        roomId, 
-        userName 
+      // Enviar join-room con timeout
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Room join timeout'));
+        }, 5000);
+
+        this.socket.emit('join-room', { 
+          roomId, 
+          userName 
+        });
+
+        // Listen for successful join (user-joined event)
+        const onUserJoined = (data) => {
+          if (data.participants && data.participants.includes(userName)) {
+            clearTimeout(timeout);
+            this.socket.off('user-joined', onUserJoined);
+            resolve();
+          }
+        };
+
+        this.socket.on('user-joined', onUserJoined);
       });
 
       this._setState('connected');
@@ -532,11 +625,13 @@ class ConnectionManager {
   }
 
   /**
-   * Reconexión automática
+   * Reconexión automática mejorada
    */
   _attemptReconnect() {
     if (this.reconnectAttempts >= this.config.reconnectAttempts) {
       this._log('Max reconnection attempts reached', 'error');
+      this._setState('error');
+      this._handleError(new Error('Unable to reconnect to server after multiple attempts'), 'reconnection');
       return;
     }
 
@@ -558,8 +653,9 @@ class ConnectionManager {
         }
         
         this.reconnectAttempts = 0;
+        this._log('✅ Reconnection successful');
       } catch (error) {
-        this._log(`Reconnection attempt ${this.reconnectAttempts} failed`, 'error');
+        this._log(`Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`, 'error');
         this._attemptReconnect();
       }
     }, delay);
@@ -573,6 +669,45 @@ class ConnectionManager {
         this.callbacks.onRemoteStream(null);
       }
     }
+  }
+
+  /**
+   * Test de conectividad mejorado
+   */
+  async testConnection() {
+    const servers = this._getServerUrls();
+    const results = [];
+
+    for (const serverUrl of servers) {
+      try {
+        const startTime = Date.now();
+        
+        // Try HTTP health check first
+        const healthUrl = serverUrl.replace(/^ws/, 'http').replace(/^wss/, 'https') + '/health';
+        const response = await fetch(healthUrl, { 
+          method: 'GET',
+          timeout: 5000 
+        });
+        
+        const endTime = Date.now();
+        const data = await response.json();
+        
+        results.push({
+          server: serverUrl,
+          status: 'success',
+          responseTime: endTime - startTime,
+          data: data
+        });
+      } catch (error) {
+        results.push({
+          server: serverUrl,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -594,7 +729,9 @@ class ConnectionManager {
       hasLocalStream: !!this.localStream,
       hasRemoteStream: !!this.remoteStream,
       isSocketConnected: this.socket && this.socket.connected,
-      peerConnectionState: this.peerConnection ? this.peerConnection.connectionState : null
+      peerConnectionState: this.peerConnection ? this.peerConnection.connectionState : null,
+      reconnectAttempts: this.reconnectAttempts,
+      serverUrl: this.socket ? this.socket.io.uri : null
     };
   }
 

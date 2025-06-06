@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server } from 'lucide-react';
 import ConnectionManager from '../utils/connectionManager.js';
 import { getUserMedia, stopStream } from '../utils/mediaManager.js';
 
@@ -28,6 +28,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [debugLogs, setDebugLogs] = useState<string>('');
   const [connectionInfo, setConnectionInfo] = useState<any>(null);
   const [connectionMethod, setConnectionMethod] = useState<string>('');
+  const [connectionTestResults, setConnectionTestResults] = useState<any[]>([]);
   
   // Estados de timing
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
@@ -294,16 +295,29 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     onEndCall();
   };
 
-  // Test de conectividad
+  // Test de conectividad mejorado
   const handleConnectionTest = async () => {
     try {
-      const response = await fetch('https://biometricov4.onrender.com/test-connection');
-      const data = await response.json();
-      console.log('Connection test result:', data);
-      alert(`Server reachable! Response time: ${Date.now() - new Date(data.timestamp).getTime()}ms`);
+      setConnectionTestResults([]);
+      
+      if (connectionManagerRef.current) {
+        const results = await connectionManagerRef.current.testConnection();
+        setConnectionTestResults(results);
+        
+        const successfulConnections = results.filter(r => r.status === 'success');
+        
+        if (successfulConnections.length > 0) {
+          const fastest = successfulConnections.reduce((prev, current) => 
+            (prev.responseTime < current.responseTime) ? prev : current
+          );
+          alert(`✅ Server reachable!\nFastest: ${fastest.server}\nResponse time: ${fastest.responseTime}ms`);
+        } else {
+          alert('❌ No servers are reachable. Please check:\n1. Internet connection\n2. Server is running (npm run dev in server directory)\n3. Firewall settings');
+        }
+      }
     } catch (error) {
       console.error('Connection test failed:', error);
-      alert('Server not reachable!');
+      alert('❌ Connection test failed: ' + error.message);
     }
   };
 
@@ -444,7 +458,16 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         <div className="text-center p-8 max-w-4xl">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">Connection Error</h3>
-          <p className="text-gray-300 mb-6">{error.message}</p>
+          <p className="text-gray-300 mb-2">{error.message}</p>
+          
+          {error.suggestion && (
+            <div className="bg-blue-900 bg-opacity-30 p-4 rounded-lg mb-6">
+              <div className="flex items-start">
+                <Server className="h-5 w-5 text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
+                <p className="text-blue-200 text-sm text-left">{error.suggestion}</p>
+              </div>
+            </div>
+          )}
           
           <div className="space-x-4 mb-6">
             <button
@@ -475,6 +498,28 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               {showDebug ? 'Hide' : 'Show'} Debug
             </button>
           </div>
+          
+          {/* Connection Test Results */}
+          {connectionTestResults.length > 0 && (
+            <div className="bg-gray-800 p-4 rounded-lg text-left text-sm mb-4">
+              <h4 className="text-white font-semibold mb-2">Server Connection Test Results:</h4>
+              {connectionTestResults.map((result, index) => (
+                <div key={index} className={`p-2 rounded mb-2 ${
+                  result.status === 'success' ? 'bg-green-900 bg-opacity-30' : 'bg-red-900 bg-opacity-30'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">{result.server}</span>
+                    <span className={result.status === 'success' ? 'text-green-400' : 'text-red-400'}>
+                      {result.status === 'success' ? `✅ ${result.responseTime}ms` : '❌ Failed'}
+                    </span>
+                  </div>
+                  {result.error && (
+                    <p className="text-red-300 text-xs mt-1">{result.error}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           
           {showDebug && (
             <div className="bg-gray-800 p-4 rounded-lg text-left text-xs max-h-64 overflow-y-auto mb-4">
@@ -576,6 +621,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <p>Participants: {participants.length}</p>
               <p>Local Stream: {localStream ? '✅' : '❌'}</p>
               <p>Remote Stream: {remoteStream ? '✅' : '❌'}</p>
+              {connectionInfo?.serverUrl && (
+                <p>Server: {connectionInfo.serverUrl}</p>
+              )}
             </div>
             
             {connectionInfo && (
