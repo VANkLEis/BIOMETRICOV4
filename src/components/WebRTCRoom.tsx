@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
+import mediaManager, { getUserMedia, stopStream, setDebugMode, getLastError } from '../utils/mediaManager.js';
 
 interface WebRTCRoomProps {
   userName: string;
@@ -23,12 +24,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [showDebug, setShowDebug] = useState(false);
   const [initializationStep, setInitializationStep] = useState<string>('Ready to start');
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [mediaInfo, setMediaInfo] = useState<any>(null);
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRoom = useRef(false);
   const initializationAttempts = useRef(0);
-  const initializationTimeout = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const addDebugInfo = useCallback((message: string) => {
@@ -47,7 +48,13 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🔧 SOLUCIÓN 1: Solo inicializar tras interacción del usuario
+  // Inicializar MediaManager con debug
+  useEffect(() => {
+    setDebugMode(true);
+    addDebugInfo('🎬 MediaManager initialized with debug mode');
+  }, [addDebugInfo]);
+
+  // 🔧 SOLUCIÓN PRINCIPAL: Usar MediaManager para obtener medios de forma robusta
   const handleStartCall = async () => {
     if (hasUserInteracted) return;
     
@@ -55,12 +62,20 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     setCameraStatus('loading');
     setConnectionStatus('connecting');
     setInitializationStep('Starting WebRTC initialization...');
+    setError(null);
     
     try {
       await initializeWebRTC();
     } catch (err: any) {
       console.error('Error starting call:', err);
-      setError(`Failed to start call: ${err.message}`);
+      
+      // Si el error es recuperable, mostrar opciones de reintento
+      if (err.recoverable) {
+        setError(`${err.message}\n\nSuggested action: ${err.userAction}`);
+      } else {
+        setError(`Critical error: ${err.message}`);
+      }
+      
       setCameraStatus('error');
       setConnectionStatus('disconnected');
     }
@@ -69,44 +84,52 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const initializeWebRTC = async () => {
     try {
       initializationAttempts.current++;
-      setInitializationStep('Checking environment...');
-      addDebugInfo(`🚀 Initializing WebRTC (attempt ${initializationAttempts.current})`);
-      addDebugInfo(`🌍 Environment: ${window.location.hostname}`);
-      addDebugInfo(`🔒 Protocol: ${window.location.protocol}`);
+      setInitializationStep('Initializing media manager...');
+      addDebugInfo(`🚀 Starting WebRTC initialization (attempt ${initializationAttempts.current})`);
       
-      if (!window.isSecureContext) {
-        throw new Error('Secure context required for camera access');
-      }
-      addDebugInfo('✅ Secure context confirmed');
-      setInitializationStep('Secure context confirmed');
+      // Inicializar MediaManager
+      const capabilities = await mediaManager.initialize();
+      addDebugInfo(`✅ MediaManager initialized: ${JSON.stringify(capabilities)}`);
+      setInitializationStep('Media manager ready');
       
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('getUserMedia not supported in this browser');
-      }
-      addDebugInfo('✅ getUserMedia API available');
-      setInitializationStep('Media API available');
+      setInitializationStep('Getting camera and microphone access...');
       
-      // 🔧 SOLUCIÓN 2: Limpiar streams previos antes de solicitar nuevos
-      await cleanupPreviousStreams();
+      // Usar MediaManager para obtener medios con fallbacks automáticos
+      const mediaResult = await getUserMedia({
+        quality: 'medium',
+        video: true,
+        audio: true,
+        fallbackToAudioOnly: false, // No fallar a solo audio inmediatamente
+        allowPartialSuccess: true   // Permitir éxito parcial (solo video o solo audio)
+      });
       
-      setInitializationStep('Getting camera access...');
-      const stream = await getUserMediaWithSimpleConstraints();
+      setLocalStream(mediaResult.stream);
+      setMediaInfo(mediaResult);
+      addDebugInfo(`✅ Media obtained: ${mediaResult.description}`);
+      addDebugInfo(`📊 Quality: ${mediaResult.quality}, Partial: ${mediaResult.isPartial}`);
+      setInitializationStep(`Media ready: ${mediaResult.description}`);
       
-      setLocalStream(stream);
-      addDebugInfo(`✅ Media stream obtained: ${stream.getTracks().length} tracks`);
-      setInitializationStep('Media stream obtained');
-      
+      // Configurar video local
       setInitializationStep('Setting up local video...');
-      await setupLocalVideo(stream);
+      await setupLocalVideo(mediaResult.stream);
       
+      // Conectar al servidor de señalización
       setInitializationStep('Connecting to signaling server...');
       await connectToSignalingServer();
       
+      // Inicializar conexión peer
       setInitializationStep('Initializing peer connection...');
-      initializePeerConnection(stream);
+      initializePeerConnection(mediaResult.stream);
       
       setCameraStatus('active');
       setInitializationStep('WebRTC ready');
+      
+      // Mostrar advertencia si es éxito parcial
+      if (mediaResult.isPartial) {
+        const warningMsg = `Partial media access: ${mediaResult.description}. Some features may be limited.`;
+        addDebugInfo(`⚠️ ${warningMsg}`);
+        // No establecer como error, solo como advertencia
+      }
       
     } catch (err: any) {
       console.error('Error initializing WebRTC:', err);
@@ -115,106 +138,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setConnectionStatus('disconnected');
       setInitializationStep(`Error: ${err.message}`);
       
-      let errorMessage = 'Failed to access camera/microphone. ';
-      
-      if (err.name === 'NotAllowedError') {
-        errorMessage += 'Camera/microphone access was denied. Please allow permissions and try again.';
-      } else if (err.name === 'NotFoundError') {
-        errorMessage += 'No camera or microphone found. Please connect a camera and try again.';
-      } else if (err.name === 'NotReadableError') {
-        errorMessage += 'Camera is being used by another application. Please close other apps and try again.';
-      } else if (err.name === 'OverconstrainedError') {
-        errorMessage += 'Camera constraints could not be satisfied. Please try with a different camera.';
-      } else if (err.message.includes('Secure context')) {
-        errorMessage += 'HTTPS is required for camera access. Please use a secure connection.';
-      } else if (err.message.includes('signaling server')) {
-        errorMessage += 'Unable to connect to video call servers. Please check your internet connection and try again.';
-      } else {
-        errorMessage += `Technical error: ${err.message}`;
+      // Obtener error detallado del MediaManager
+      const lastError = getLastError();
+      if (lastError) {
+        addDebugInfo(`📋 Detailed error: ${JSON.stringify(lastError, null, 2)}`);
       }
       
-      setError(errorMessage);
+      throw err;
     }
-  };
-
-  // 🔧 SOLUCIÓN 2: Limpiar streams previos correctamente
-  const cleanupPreviousStreams = async () => {
-    addDebugInfo('🧹 Cleaning up previous streams...');
-    
-    // Detener tracks del stream local actual
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        track.stop();
-        addDebugInfo(`🛑 Stopped previous ${track.kind} track`);
-      });
-      setLocalStream(null);
-    }
-    
-    // Limpiar elementos de video
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-    
-    // Esperar un momento para que se liberen los recursos
-    await new Promise(resolve => setTimeout(resolve, 500));
-    addDebugInfo('✅ Previous streams cleaned up');
-  };
-
-  // 🔧 SOLUCIÓN 3: Constraints simples y compatibles
-  const getUserMediaWithSimpleConstraints = async (): Promise<MediaStream> => {
-    const constraints = [
-      // Constraint básico y compatible
-      {
-        video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
-      },
-      // Constraint mínimo
-      {
-        video: true,
-        audio: true
-      },
-      // Solo video si audio falla
-      {
-        video: true,
-        audio: false
-      }
-    ];
-
-    for (let i = 0; i < constraints.length; i++) {
-      try {
-        addDebugInfo(`🎯 Trying constraint ${i + 1}/${constraints.length}`);
-        const stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
-        
-        const videoTracks = stream.getVideoTracks();
-        const audioTracks = stream.getAudioTracks();
-        
-        addDebugInfo(`✅ Success! Video: ${videoTracks.length}, Audio: ${audioTracks.length}`);
-        
-        if (videoTracks.length > 0) {
-          const settings = videoTracks[0].getSettings();
-          addDebugInfo(`📹 Video: ${settings.width}x${settings.height}`);
-        }
-        
-        return stream;
-      } catch (err: any) {
-        addDebugInfo(`❌ Constraint ${i + 1} failed: ${err.name}`);
-        if (i === constraints.length - 1) {
-          throw err;
-        }
-      }
-    }
-    
-    throw new Error('Failed to get media stream');
   };
 
   const setupLocalVideo = async (stream: MediaStream): Promise<void> => {
@@ -506,7 +437,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setCameraStatus('loading');
       setInitializationStep('Retrying...');
       
-      await cleanupPreviousStreams();
+      // Limpiar usando MediaManager
+      if (localStream) {
+        stopStream(localStream);
+        setLocalStream(null);
+      }
       
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -534,8 +469,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const cleanup = () => {
     addDebugInfo('🧹 Cleaning up...');
     
+    // Usar MediaManager para limpiar
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      stopStream(localStream);
     }
     
     if (peerConnectionRef.current) {
@@ -546,13 +482,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       socketRef.current.disconnect();
     }
     
-    if (initializationTimeout.current) {
-      clearTimeout(initializationTimeout.current);
-    }
-    
     if (connectionTimeout.current) {
       clearTimeout(connectionTimeout.current);
     }
+    
+    // Limpiar MediaManager
+    mediaManager.cleanup();
   };
 
   const handleEndCall = () => {
@@ -564,7 +499,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     return cleanup;
   }, []);
 
-  // 🔧 SOLUCIÓN 4: Pantalla de inicio que requiere interacción del usuario
+  // Pantalla de inicio que requiere interacción del usuario
   if (!hasUserInteracted) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
@@ -590,23 +525,38 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     );
   }
 
-  // 🔧 SOLUCIÓN 5: Pantalla de error mejorada
+  // Pantalla de error mejorada con información del MediaManager
   if (error && (cameraStatus === 'error' || connectionStatus === 'disconnected')) {
+    const lastError = getLastError();
+    
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-4xl">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">Connection Error</h3>
-          <p className="text-gray-300 mb-6">{error}</p>
+          <p className="text-gray-300 mb-6 whitespace-pre-line">{error}</p>
+          
+          {lastError && (
+            <div className="bg-red-900 bg-opacity-30 p-4 rounded-lg mb-6 text-left">
+              <h4 className="font-semibold text-red-300 mb-2">Technical Details:</h4>
+              <p className="text-sm text-red-200 mb-2">Error Type: {lastError.name}</p>
+              <p className="text-sm text-red-200 mb-2">Requested: Video={lastError.requestedVideo}, Audio={lastError.requestedAudio}</p>
+              {lastError.userAction && (
+                <p className="text-sm text-yellow-200">💡 {lastError.userAction}</p>
+              )}
+            </div>
+          )}
           
           <div className="space-x-4 mb-6">
-            <button
-              onClick={retryConnection}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </button>
+            {lastError?.recoverable !== false && (
+              <button
+                onClick={retryConnection}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Try Again
+              </button>
+            )}
             <button
               onClick={handleEndCall}
               className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg"
@@ -626,6 +576,15 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             <div className="bg-gray-800 p-4 rounded-lg text-left text-xs max-h-64 overflow-y-auto mb-4">
               <h4 className="text-white font-semibold mb-2">Debug Information:</h4>
               <pre className="text-gray-300 whitespace-pre-wrap">{debugInfo}</pre>
+              
+              {mediaInfo && (
+                <div className="mt-4 pt-4 border-t border-gray-600">
+                  <h5 className="text-white font-semibold mb-2">Media Information:</h5>
+                  <pre className="text-gray-300 whitespace-pre-wrap">
+                    {JSON.stringify(mediaInfo, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
           
@@ -638,6 +597,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <li>Try a different browser (Chrome recommended)</li>
               <li>Check your internet connection</li>
               <li>Verify Render server is accessible</li>
+              <li>Try refreshing the page</li>
             </ul>
           </div>
         </div>
@@ -692,6 +652,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               'bg-red-500'
             }`}></div>
           </div>
+          
+          {/* Media Quality Indicator */}
+          {mediaInfo && cameraStatus === 'active' && (
+            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-xs text-white">
+              {mediaInfo.quality}
+              {mediaInfo.isPartial && ' (partial)'}
+            </div>
+          )}
         </div>
 
         {/* Connection Status */}
@@ -731,6 +699,21 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
             <h4 className="text-white font-semibold mb-2 text-sm">Debug Information:</h4>
             <pre className="text-gray-300 text-xs whitespace-pre-wrap">{debugInfo}</pre>
+            
+            {mediaInfo && (
+              <div className="mt-2 pt-2 border-t border-gray-600">
+                <h5 className="text-white font-semibold mb-1 text-xs">Media Info:</h5>
+                <div className="text-gray-300 text-xs">
+                  <p>Quality: {mediaInfo.quality}</p>
+                  <p>Video: {mediaInfo.hasVideo ? '✅' : '❌'}</p>
+                  <p>Audio: {mediaInfo.hasAudio ? '✅' : '❌'}</p>
+                  <p>Partial: {mediaInfo.isPartial ? '⚠️' : '✅'}</p>
+                  {mediaInfo.videoSettings && (
+                    <p>Resolution: {mediaInfo.videoSettings.width}x{mediaInfo.videoSettings.height}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
