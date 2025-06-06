@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi } from 'lucide-react';
-import CallManager from '../utils/callManager.js';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity } from 'lucide-react';
+import ConnectionManager from '../utils/connectionManager.js';
+import { getUserMedia, stopStream } from '../utils/mediaManager.js';
 
 interface WebRTCRoomProps {
   userName: string;
@@ -11,10 +12,10 @@ interface WebRTCRoomProps {
 const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const callManagerRef = useRef<CallManager | null>(null);
+  const connectionManagerRef = useRef<ConnectionManager | null>(null);
   
   // Estados principales
-  const [callState, setCallState] = useState<string>('idle');
+  const [connectionState, setConnectionState] = useState<string>('idle');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [participants, setParticipants] = useState<string[]>([]);
@@ -25,19 +26,18 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string>('');
-  const [mediaInfo, setMediaInfo] = useState<any>(null);
   const [connectionInfo, setConnectionInfo] = useState<any>(null);
+  const [connectionMethod, setConnectionMethod] = useState<string>('');
   
   // Estados de timing
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
-  const [mediaRequestTime, setMediaRequestTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
-    if (joinStartTime && (callState === 'joining' || callState === 'requesting_media')) {
+    if (joinStartTime && connectionState !== 'peer_connected') {
       interval = setInterval(() => {
         setElapsedTime(Date.now() - joinStartTime);
       }, 100);
@@ -46,7 +46,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [joinStartTime, callState]);
+  }, [joinStartTime, connectionState]);
 
   // Formatear tiempo transcurrido
   const formatElapsedTime = (ms: number) => {
@@ -56,68 +56,71 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
 
   // Obtener mensaje de estado para UI
   const getStateMessage = () => {
-    switch (callState) {
+    switch (connectionState) {
       case 'idle':
-        return 'Ready to join call';
+        return 'Initializing...';
       case 'joining':
         return `Connecting to room... (${formatElapsedTime(elapsedTime)})`;
-      case 'signaling_ready':
-        return 'Connected to room - Ready for media';
+      case 'connected':
+        return 'Connected to room - Ready for video';
       case 'requesting_media':
         return `Requesting camera permissions... (${formatElapsedTime(elapsedTime)})`;
       case 'media_ready':
-        return 'Media ready - Establishing peer connection...';
-      case 'connected':
-        return 'Call active';
+        return 'Media ready - Establishing connection...';
+      case 'peer_connected':
+        return `Call active via ${connectionMethod}`;
+      case 'socket_streaming':
+        return 'Call active via Socket.IO streaming';
       case 'disconnected':
-        return 'Disconnected';
+        return 'Disconnected - Attempting reconnection...';
       case 'error':
-        return 'Error occurred';
+        return 'Connection error';
       default:
-        return callState;
+        return connectionState;
     }
   };
 
   // Obtener color de estado
   const getStateColor = () => {
-    switch (callState) {
-      case 'connected':
+    switch (connectionState) {
+      case 'peer_connected':
+      case 'socket_streaming':
         return 'bg-green-600';
       case 'requesting_media':
       case 'joining':
       case 'media_ready':
         return 'bg-yellow-600';
-      case 'signaling_ready':
+      case 'connected':
         return 'bg-blue-600';
       case 'error':
-      case 'disconnected':
         return 'bg-red-600';
+      case 'disconnected':
+        return 'bg-orange-600';
       default:
         return 'bg-gray-600';
     }
   };
 
-  // Inicializar CallManager
+  // Inicializar ConnectionManager
   useEffect(() => {
-    const callManager = new CallManager();
-    callManagerRef.current = callManager;
-    
-    // Habilitar debug
-    callManager.setDebugMode(true);
+    const connectionManager = new ConnectionManager();
+    connectionManagerRef.current = connectionManager;
     
     // Configurar callbacks
-    callManager.setCallbacks({
+    connectionManager.setCallbacks({
       onStateChange: (newState: string, oldState: string, data: any) => {
         console.log(`🔄 State change: ${oldState} → ${newState}`, data);
-        setCallState(newState);
+        setConnectionState(newState);
+        
+        // Detectar método de conexión
+        if (newState === 'peer_connected') {
+          setConnectionMethod('WebRTC');
+        } else if (newState === 'socket_streaming') {
+          setConnectionMethod('Socket.IO');
+        }
         
         // Actualizar información de conexión
-        setConnectionInfo(callManager.getState());
-        
-        // Manejar estados específicos
-        if (newState === 'media_ready' && data?.mediaInfo) {
-          setMediaInfo(data.mediaInfo);
-        }
+        setConnectionInfo(connectionManager.getState());
       },
       
       onParticipantsChange: (newParticipants: string[]) => {
@@ -138,7 +141,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       },
       
       onError: (errorInfo: any) => {
-        console.error('❌ Call error:', errorInfo);
+        console.error('❌ Connection error:', errorInfo);
         setError(errorInfo);
       },
       
@@ -148,13 +151,20 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     });
     
     return () => {
-      callManager.cleanup();
+      connectionManager.cleanup();
     };
   }, []);
 
-  // 🔧 FASE 1: Unirse al room SIN medios
+  // Auto-join al montar el componente
+  useEffect(() => {
+    if (connectionState === 'idle') {
+      handleJoinRoom();
+    }
+  }, []);
+
+  // Unirse al room
   const handleJoinRoom = async () => {
-    if (!callManagerRef.current) return;
+    if (!connectionManagerRef.current) return;
     
     try {
       setError(null);
@@ -162,7 +172,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       
       console.log('🚀 Starting room join process...');
       
-      await callManagerRef.current.joinRoom(roomId, userName, true);
+      await connectionManagerRef.current.joinRoom(roomId, userName, true);
       
       console.log('✅ Room joined successfully');
       
@@ -172,17 +182,17 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🔧 FASE 2: Solicitar medios (requiere interacción del usuario)
+  // Solicitar medios y agregar al connection manager
   const handleRequestMedia = async () => {
-    if (!callManagerRef.current) return;
+    if (!connectionManagerRef.current) return;
     
     try {
       setError(null);
-      setMediaRequestTime(Date.now());
+      setConnectionState('requesting_media');
       
       console.log('🎥 Starting media request...');
       
-      const result = await callManagerRef.current.requestMedia({
+      const result = await getUserMedia({
         quality: 'medium',
         video: true,
         audio: true,
@@ -193,7 +203,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       console.log('✅ Media obtained:', result);
       
       setLocalStream(result.stream);
-      setMediaInfo(result.mediaInfo);
+      setConnectionState('media_ready');
       
       // Configurar video local
       if (localVideoRef.current && result.stream) {
@@ -201,66 +211,110 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         localVideoRef.current.play().catch(console.error);
       }
       
+      // Agregar stream al connection manager
+      await connectionManagerRef.current.addLocalStream(result.stream);
+      
     } catch (err: any) {
       console.error('❌ Failed to get media:', err);
       setError(err);
+      setConnectionState('connected'); // Volver al estado anterior
     }
   };
 
   // Toggle controles
   const toggleVideo = () => {
-    if (callManagerRef.current) {
-      const enabled = callManagerRef.current.toggleVideo();
-      setIsVideoEnabled(enabled);
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoEnabled(videoTrack.enabled);
+      }
     }
   };
 
   const toggleAudio = () => {
-    if (callManagerRef.current) {
-      const enabled = callManagerRef.current.toggleAudio();
-      setIsAudioEnabled(enabled);
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsAudioEnabled(audioTrack.enabled);
+      }
     }
   };
 
   // Reintentar conexión
   const handleRetry = async () => {
-    if (!callManagerRef.current) return;
+    if (!connectionManagerRef.current) return;
     
     setError(null);
     
-    // Si estamos en signaling_ready, solo reintentar medios
-    if (callState === 'signaling_ready') {
-      await handleRequestMedia();
-    } else {
-      // Limpiar y empezar de nuevo
-      callManagerRef.current.cleanup();
-      await handleJoinRoom();
-    }
+    // Limpiar y empezar de nuevo
+    connectionManagerRef.current.cleanup();
+    
+    // Reinicializar
+    const connectionManager = new ConnectionManager();
+    connectionManagerRef.current = connectionManager;
+    
+    // Reconfigurar callbacks
+    connectionManager.setCallbacks({
+      onStateChange: (newState: string, oldState: string, data: any) => {
+        setConnectionState(newState);
+        setConnectionInfo(connectionManager.getState());
+      },
+      onParticipantsChange: setParticipants,
+      onRemoteStream: (stream: MediaStream | null) => {
+        setRemoteStream(stream);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = stream;
+          if (stream) {
+            remoteVideoRef.current.play().catch(console.error);
+          }
+        }
+      },
+      onError: setError,
+      onDebug: (logMessage: string) => {
+        setDebugLogs(prev => prev + '\n' + logMessage);
+      }
+    });
+    
+    await handleJoinRoom();
   };
 
   // Finalizar llamada
   const handleEndCall = () => {
-    if (callManagerRef.current) {
-      callManagerRef.current.cleanup();
+    if (connectionManagerRef.current) {
+      connectionManagerRef.current.cleanup();
     }
+    
+    if (localStream) {
+      stopStream(localStream);
+      setLocalStream(null);
+    }
+    
     onEndCall();
   };
 
-  // Auto-join al montar el componente
-  useEffect(() => {
-    if (callState === 'idle') {
-      handleJoinRoom();
+  // Test de conectividad
+  const handleConnectionTest = async () => {
+    try {
+      const response = await fetch('https://biometricov4.onrender.com/test-connection');
+      const data = await response.json();
+      console.log('Connection test result:', data);
+      alert(`Server reachable! Response time: ${Date.now() - new Date(data.timestamp).getTime()}ms`);
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      alert('Server not reachable!');
     }
-  }, []);
+  };
 
   // 🎨 PANTALLA DE INICIO - Esperando conexión inicial
-  if (callState === 'idle' || callState === 'joining') {
+  if (connectionState === 'idle' || connectionState === 'joining') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-md">
           <div className="relative mb-6">
             <Wifi className="h-16 w-16 text-blue-500 mx-auto animate-pulse" />
-            {callState === 'joining' && (
+            {connectionState === 'joining' && (
               <div className="absolute -bottom-2 -right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full">
                 {formatElapsedTime(elapsedTime)}
               </div>
@@ -268,31 +322,37 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           </div>
           
           <h2 className="text-2xl font-bold mb-4">
-            {callState === 'idle' ? 'Initializing...' : 'Connecting to Room'}
+            {connectionState === 'idle' ? 'Initializing...' : 'Connecting to Room'}
           </h2>
           
           <p className="text-gray-300 mb-6">
-            {callState === 'idle' 
-              ? 'Setting up the call system...'
-              : 'Establishing secure connection to the signaling server...'
+            {connectionState === 'idle' 
+              ? 'Setting up the connection system...'
+              : 'Establishing secure connection to the server...'
             }
           </p>
           
           <div className="text-sm text-gray-400 space-y-1">
             <p>Room: {roomId}</p>
             <p>User: {userName}</p>
-            {callState === 'joining' && (
+            {connectionState === 'joining' && (
               <p>Time: {formatElapsedTime(elapsedTime)}</p>
             )}
           </div>
           
           {error && (
-            <div className="mt-6">
+            <div className="mt-6 space-y-2">
               <button
                 onClick={handleRetry}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg mr-2"
               >
                 Retry Connection
+              </button>
+              <button
+                onClick={handleConnectionTest}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg"
+              >
+                Test Server
               </button>
             </div>
           )}
@@ -301,8 +361,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     );
   }
 
-  // 🎨 PANTALLA DE ACTIVACIÓN DE MEDIOS - Requiere interacción del usuario
-  if (callState === 'signaling_ready') {
+  // 🎨 PANTALLA DE ACTIVACIÓN DE MEDIOS
+  if (connectionState === 'connected') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-md">
@@ -343,8 +403,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     );
   }
 
-  // 🎨 PANTALLA DE SOLICITUD DE MEDIOS - Esperando permisos
-  if (callState === 'requesting_media') {
+  // 🎨 PANTALLA DE SOLICITUD DE MEDIOS
+  if (connectionState === 'requesting_media') {
     return (
       <div className="flex items-center justify-center h-full bg-gray-900 text-white">
         <div className="text-center p-8 max-w-md">
@@ -366,19 +426,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             <p className="text-yellow-200 text-sm">
               Waiting for permissions... ({formatElapsedTime(elapsedTime)})
             </p>
-            <p className="text-yellow-300 text-xs mt-2">
-              The connection will remain active while you grant permissions
-            </p>
           </div>
           
           <div className="text-sm text-gray-400 space-y-1">
             <p>🔗 Connection: Active</p>
             <p>👥 Participants: {participants.length}</p>
-            <p>⏱️ Timeout: 30 seconds</p>
-          </div>
-          
-          <div className="mt-6 text-xs text-gray-500">
-            <p>💡 If you don't see a permission prompt, check your browser's address bar</p>
           </div>
         </div>
       </div>
@@ -394,22 +446,21 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           <h3 className="text-xl font-semibold mb-2">Connection Error</h3>
           <p className="text-gray-300 mb-6">{error.message}</p>
           
-          {error.userAction && (
-            <div className="bg-blue-900 bg-opacity-30 p-4 rounded-lg mb-6">
-              <p className="text-blue-200">💡 {error.userAction}</p>
-            </div>
-          )}
-          
           <div className="space-x-4 mb-6">
-            {error.recoverable !== false && (
-              <button
-                onClick={handleRetry}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Try Again
-              </button>
-            )}
+            <button
+              onClick={handleRetry}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </button>
+            <button
+              onClick={handleConnectionTest}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
+            >
+              <Activity className="h-4 w-4 mr-2" />
+              Test Server
+            </button>
             <button
               onClick={handleEndCall}
               className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg"
@@ -440,18 +491,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               )}
             </div>
           )}
-          
-          <div className="mt-4 text-sm text-gray-400">
-            <p className="font-semibold mb-2">Troubleshooting Steps:</p>
-            <ul className="list-disc list-inside text-left space-y-1">
-              <li>Ensure you're using HTTPS (required for camera access)</li>
-              <li>Allow camera and microphone permissions</li>
-              <li>Close other apps using the camera</li>
-              <li>Try a different browser (Chrome recommended)</li>
-              <li>Check your internet connection</li>
-              <li>Verify server is accessible at biometricov4.onrender.com</li>
-            </ul>
-          </div>
         </div>
       </div>
     );
@@ -495,19 +534,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           {/* Status Indicator */}
           <div className="absolute top-2 left-2">
             <div className={`w-3 h-3 rounded-full ${
-              callState === 'connected' ? 'bg-green-500' :
-              callState === 'media_ready' ? 'bg-yellow-500' :
+              connectionState === 'peer_connected' || connectionState === 'socket_streaming' ? 'bg-green-500' :
+              connectionState === 'media_ready' ? 'bg-yellow-500' :
               'bg-red-500'
             }`}></div>
           </div>
-          
-          {/* Media Quality Indicator */}
-          {mediaInfo && (
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-xs text-white">
-              {mediaInfo.quality}
-              {mediaInfo.isPartial && ' (partial)'}
-            </div>
-          )}
         </div>
 
         {/* Connection Status */}
@@ -539,25 +570,26 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         {showDebug && (
           <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
             <h4 className="text-white font-semibold mb-2 text-sm">Debug Information:</h4>
-            <pre className="text-gray-300 text-xs whitespace-pre-wrap">{debugLogs}</pre>
+            <div className="text-gray-300 text-xs space-y-1">
+              <p>State: {connectionState}</p>
+              <p>Method: {connectionMethod || 'None'}</p>
+              <p>Participants: {participants.length}</p>
+              <p>Local Stream: {localStream ? '✅' : '❌'}</p>
+              <p>Remote Stream: {remoteStream ? '✅' : '❌'}</p>
+            </div>
             
             {connectionInfo && (
               <div className="mt-2 pt-2 border-t border-gray-600">
-                <h5 className="text-white font-semibold mb-1 text-xs">Connection Info:</h5>
-                <div className="text-gray-300 text-xs">
-                  <p>State: {connectionInfo.state}</p>
-                  <p>Socket: {connectionInfo.isConnected ? '✅' : '❌'}</p>
-                  <p>Local Stream: {connectionInfo.hasLocalStream ? '✅' : '❌'}</p>
-                  <p>Remote Stream: {connectionInfo.hasRemoteStream ? '✅' : '❌'}</p>
-                  <p>Peer: {connectionInfo.peerConnectionState || 'none'}</p>
-                </div>
+                <pre className="text-gray-300 text-xs whitespace-pre-wrap">
+                  {JSON.stringify(connectionInfo, null, 2)}
+                </pre>
               </div>
             )}
           </div>
         )}
 
         {/* No Remote Stream Message */}
-        {!remoteStream && callState === 'connected' && (
+        {!remoteStream && (connectionState === 'peer_connected' || connectionState === 'socket_streaming') && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
             <div className="text-center text-white">
               <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
@@ -600,7 +632,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           )}
         </button>
 
-        {(callState === 'error' || callState === 'disconnected') && (
+        {(connectionState === 'error' || connectionState === 'disconnected') && (
           <button
             onClick={handleRetry}
             className="p-3 rounded-full bg-blue-600 hover:bg-blue-700 transition-colors"
@@ -609,6 +641,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             <RefreshCw className="h-6 w-6 text-white" />
           </button>
         )}
+
+        <button
+          onClick={handleConnectionTest}
+          className="p-3 rounded-full bg-gray-600 hover:bg-gray-700 transition-colors"
+          title="Test connection"
+        >
+          <Activity className="h-6 w-6 text-white" />
+        </button>
 
         <button
           onClick={handleEndCall}

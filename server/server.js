@@ -108,12 +108,12 @@ io.on('connection', (socket) => {
       mediaState: 'none'
     });
 
-    // Notify existing participants about new user (WITHOUT requiring media)
+    // Notify existing participants about new user
     socket.to(roomId).emit('user-joined', {
       userId: socket.id,
       userName: userName,
       participants: room.participants.map(p => p.userName),
-      shouldCreateOffer: false // Don't create offer until both have media
+      shouldCreateOffer: false
     });
 
     // Notify the new user about existing participants
@@ -121,184 +121,14 @@ io.on('connection', (socket) => {
       userId: socket.id,
       userName: userName,
       participants: room.participants.map(p => p.userName),
-      shouldCreateOffer: false // Will be handled after media is ready
+      shouldCreateOffer: false
     });
 
     console.log(`✅ User ${userName} joined room ${roomId} (${room.participants.length} participants)`);
     console.log(`📊 Room state: ${room.participants.map(p => `${p.userName}(${p.mediaState || 'none'})`).join(', ')}`);
   });
 
-  // 🔧 NEW: Handle media request started (pause timeouts, start heartbeats)
-  socket.on('media-request-started', ({ roomId, timestamp }) => {
-    console.log(`🎥 Media request started by ${socket.id} in room ${roomId}`);
-    
-    const userState = userStates.get(socket.id);
-    const room = rooms.get(roomId);
-    
-    if (userState && room) {
-      userState.mediaState = 'requesting';
-      userState.mediaRequestStarted = timestamp;
-      
-      // Track in room
-      room.mediaRequests.set(socket.id, {
-        startTime: timestamp,
-        state: 'requesting',
-        heartbeats: 0
-      });
-      
-      // Update participant state
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.mediaState = 'requesting';
-      }
-      
-      // Acknowledge the request
-      socket.emit('media-request-acknowledged', { 
-        roomId, 
-        timestamp: Date.now(),
-        timeout: 30000 // 30 second timeout
-      });
-      
-      console.log(`📝 Media request acknowledged for ${socket.id}`);
-    }
-  });
-
-  // 🔧 NEW: Handle media heartbeats (keep connection alive during permission request)
-  socket.on('media-heartbeat', ({ roomId, state, timestamp }) => {
-    const userState = userStates.get(socket.id);
-    const room = rooms.get(roomId);
-    
-    if (userState && room && room.mediaRequests.has(socket.id)) {
-      userState.lastHeartbeat = timestamp;
-      
-      const mediaRequest = room.mediaRequests.get(socket.id);
-      mediaRequest.heartbeats++;
-      mediaRequest.lastHeartbeat = timestamp;
-      
-      console.log(`💓 Media heartbeat from ${socket.id} (#${mediaRequest.heartbeats})`);
-      
-      // Respond to heartbeat to confirm server is alive
-      socket.emit('media-heartbeat-ack', { 
-        timestamp: Date.now(),
-        heartbeatCount: mediaRequest.heartbeats
-      });
-    }
-  });
-
-  // 🔧 NEW: Handle successful media acquisition
-  socket.on('media-ready', ({ roomId, mediaInfo, timestamp }) => {
-    console.log(`✅ Media ready for ${socket.id} in room ${roomId}:`, mediaInfo);
-    
-    const userState = userStates.get(socket.id);
-    const room = rooms.get(roomId);
-    
-    if (userState && room) {
-      userState.mediaState = 'ready';
-      userState.mediaInfo = mediaInfo;
-      
-      // Update room tracking
-      if (room.mediaRequests.has(socket.id)) {
-        const mediaRequest = room.mediaRequests.get(socket.id);
-        mediaRequest.state = 'ready';
-        mediaRequest.completedAt = timestamp;
-        mediaRequest.duration = timestamp - mediaRequest.startTime;
-        
-        console.log(`⏱️ Media request completed in ${mediaRequest.duration}ms`);
-      }
-      
-      // Update participant state
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.mediaState = 'ready';
-        participant.mediaInfo = mediaInfo;
-      }
-      
-      // Notify other participants that this user has media ready
-      socket.to(roomId).emit('peer-media-ready', {
-        userId: socket.id,
-        userName: socket.userName,
-        mediaInfo: mediaInfo,
-        shouldCreateOffer: true // Now we can create offers
-      });
-      
-      // If there are other participants with media, notify this user
-      const participantsWithMedia = room.participants.filter(p => 
-        p.id !== socket.id && p.mediaState === 'ready'
-      );
-      
-      if (participantsWithMedia.length > 0) {
-        socket.emit('peer-media-ready', {
-          userId: participantsWithMedia[0].id,
-          userName: participantsWithMedia[0].userName,
-          mediaInfo: participantsWithMedia[0].mediaInfo,
-          shouldCreateOffer: false // This user should wait for offer
-        });
-      }
-      
-      console.log(`🎯 Media ready notification sent. Participants with media: ${participantsWithMedia.length + 1}`);
-    }
-  });
-
-  // 🔧 NEW: Handle media errors (don't disconnect, just log and allow retry)
-  socket.on('media-error', ({ roomId, error, timestamp }) => {
-    console.log(`❌ Media error for ${socket.id} in room ${roomId}: ${error}`);
-    
-    const userState = userStates.get(socket.id);
-    const room = rooms.get(roomId);
-    
-    if (userState && room) {
-      userState.mediaState = 'error';
-      userState.lastError = { error, timestamp };
-      
-      // Update room tracking
-      if (room.mediaRequests.has(socket.id)) {
-        const mediaRequest = room.mediaRequests.get(socket.id);
-        mediaRequest.state = 'error';
-        mediaRequest.error = error;
-        mediaRequest.errorAt = timestamp;
-      }
-      
-      // Update participant state
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.mediaState = 'error';
-        participant.lastError = error;
-      }
-      
-      // DON'T disconnect - allow user to retry
-      console.log(`🔄 User ${socket.id} can retry media request`);
-    }
-  });
-
-  // 🔧 NEW: Handle media timeouts (extend grace period)
-  socket.on('media-timeout', ({ roomId, duration, timestamp }) => {
-    console.log(`⏰ Media timeout for ${socket.id} in room ${roomId} after ${duration}ms`);
-    
-    const userState = userStates.get(socket.id);
-    const room = rooms.get(roomId);
-    
-    if (userState && room) {
-      userState.mediaState = 'timeout';
-      
-      // Update room tracking
-      if (room.mediaRequests.has(socket.id)) {
-        const mediaRequest = room.mediaRequests.get(socket.id);
-        mediaRequest.state = 'timeout';
-        mediaRequest.timeoutAt = timestamp;
-        mediaRequest.duration = duration;
-      }
-      
-      // Update participant state but keep them in room
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.mediaState = 'timeout';
-      }
-      
-      console.log(`⏳ User ${socket.id} timed out but remains in room for retry`);
-    }
-  });
-
-  // Standard WebRTC signaling (unchanged)
+  // Standard WebRTC signaling
   socket.on('offer', ({ offer, roomId }) => {
     console.log(`📤 Relaying offer in room ${roomId} from ${socket.id}`);
     socket.to(roomId).emit('offer', { offer, from: socket.id });
@@ -312,6 +142,42 @@ io.on('connection', (socket) => {
   socket.on('ice-candidate', ({ candidate, roomId }) => {
     console.log(`🧊 Relaying ICE candidate in room ${roomId} from ${socket.id}`);
     socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id });
+  });
+
+  // Simple-Peer fallback signaling
+  socket.on('simple-peer-signal', ({ signal, roomId }) => {
+    console.log(`🔄 Relaying Simple-Peer signal in room ${roomId} from ${socket.id}`);
+    socket.to(roomId).emit('simple-peer-signal', { signal, from: socket.id });
+  });
+
+  // Socket.IO streaming fallback
+  socket.on('stream-frame', ({ roomId, frame, timestamp }) => {
+    console.log(`📺 Relaying stream frame in room ${roomId} from ${socket.id}`);
+    socket.to(roomId).emit('stream-frame', { frame, timestamp, from: socket.id });
+  });
+
+  // Media state updates
+  socket.on('media-ready', ({ roomId, mediaInfo }) => {
+    console.log(`✅ Media ready for ${socket.id} in room ${roomId}`);
+    
+    const room = rooms.get(roomId);
+    if (room) {
+      // Update participant state
+      const participant = room.participants.find(p => p.id === socket.id);
+      if (participant) {
+        participant.mediaState = 'ready';
+        participant.mediaInfo = mediaInfo;
+      }
+      
+      // Notify other participants
+      socket.to(roomId).emit('peer-media-ready', {
+        userId: socket.id,
+        userName: socket.userName,
+        mediaInfo: mediaInfo
+      });
+      
+      console.log(`📊 Updated room state: ${room.participants.map(p => `${p.userName}(${p.mediaState})`).join(', ')}`);
+    }
   });
 
   // Enhanced disconnect handling
@@ -350,6 +216,15 @@ io.on('connection', (socket) => {
     // Clean up user state
     userStates.delete(socket.id);
   });
+
+  // Connection diagnostics
+  socket.on('ping-test', (data) => {
+    socket.emit('pong-test', { 
+      ...data, 
+      serverTime: Date.now(),
+      socketId: socket.id 
+    });
+  });
 });
 
 // Health check endpoint with enhanced room information
@@ -369,16 +244,16 @@ app.get('/health', (req, res) => {
     usersWithMedia,
     uptime: process.uptime(),
     features: [
-      'lazy-media-loading',
-      'media-heartbeats',
-      'extended-timeouts',
-      'graceful-error-handling',
-      'state-tracking'
+      'webrtc-native',
+      'simple-peer-fallback',
+      'socket-streaming-fallback',
+      'auto-reconnection',
+      'connection-diagnostics'
     ]
   });
 });
 
-// Get room info endpoint with media state details
+// Get room info endpoint
 app.get('/rooms/:roomId', (req, res) => {
   const { roomId } = req.params;
   const room = rooms.get(roomId);
@@ -386,11 +261,6 @@ app.get('/rooms/:roomId', (req, res) => {
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
   }
-  
-  const mediaRequests = Array.from(room.mediaRequests.entries()).map(([userId, request]) => ({
-    userId,
-    ...request
-  }));
   
   res.json({
     roomId,
@@ -401,19 +271,17 @@ app.get('/rooms/:roomId', (req, res) => {
       joinedAt: p.joinedAt,
       mediaInfo: p.mediaInfo
     })),
-    mediaRequests,
     created: room.created,
     host: room.host
   });
 });
 
-// Get all rooms with enhanced details
+// Get all rooms
 app.get('/rooms', (req, res) => {
   const roomList = Array.from(rooms.entries()).map(([id, room]) => ({
     roomId: id,
     participants: room.participants.length,
     participantsWithMedia: room.participants.filter(p => p.mediaState === 'ready').length,
-    activeMediaRequests: room.mediaRequests.size,
     created: room.created,
     host: room.host
   }));
@@ -425,16 +293,13 @@ app.get('/rooms', (req, res) => {
   });
 });
 
-// Get user states (for debugging)
-app.get('/users', (req, res) => {
-  const users = Array.from(userStates.entries()).map(([id, state]) => ({
-    userId: id,
-    ...state
-  }));
-  
+// Connection test endpoint
+app.get('/test-connection', (req, res) => {
   res.json({
-    totalUsers: userStates.size,
-    users
+    message: 'Server is reachable',
+    timestamp: new Date().toISOString(),
+    headers: req.headers,
+    ip: req.ip || req.connection.remoteAddress
   });
 });
 
@@ -443,10 +308,8 @@ server.listen(port, () => {
   console.log(`📡 Port: ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔒 Secure WebSocket: wss://biometricov4.onrender.com`);
-  console.log(`🎥 Features: Lazy Media Loading, Extended Timeouts, Heartbeats`);
-  console.log(`⏱️ Media Request Timeout: 30 seconds`);
-  console.log(`💓 Heartbeat Interval: 3 seconds`);
-  console.log(`🔄 Graceful Error Recovery: Enabled`);
+  console.log(`🎥 Features: WebRTC + Simple-Peer + Socket.IO Streaming`);
+  console.log(`🔄 Auto-reconnection: Enabled`);
   console.log(`✅ Ready for production deployment`);
   console.log(`🌐 CORS enabled for: biometricov4-lunq.onrender.com`);
 });
@@ -460,7 +323,7 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Enhanced cleanup - remove stale media requests and inactive users
+// Enhanced cleanup
 setInterval(() => {
   const now = Date.now();
   const staleThreshold = 5 * 60 * 1000; // 5 minutes
@@ -473,17 +336,8 @@ setInterval(() => {
     }
   }
   
-  // Clean up old empty rooms and stale media requests
+  // Clean up old empty rooms
   for (const [roomId, room] of rooms.entries()) {
-    // Remove stale media requests
-    for (const [userId, request] of room.mediaRequests.entries()) {
-      if (request.state === 'requesting' && now - request.startTime > 60000) { // 1 minute
-        console.log(`🧹 Cleaning up stale media request: ${userId} in ${roomId}`);
-        room.mediaRequests.delete(userId);
-      }
-    }
-    
-    // Remove empty rooms older than 1 hour
     if (room.participants.length === 0 && now - room.created.getTime() > 60 * 60 * 1000) {
       rooms.delete(roomId);
       console.log(`🧹 Cleaned up old empty room: ${roomId}`);
