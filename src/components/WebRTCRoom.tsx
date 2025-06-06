@@ -21,6 +21,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const hasJoinedRoom = useRef(false);
 
   useEffect(() => {
     initializeWebRTC();
@@ -63,32 +64,43 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   };
 
   const connectToSignalingServer = () => {
-    // 🛰️ Render signaling server with secure WebSocket
+    // 🛰️ AJUSTE 2: Usar wss:// en el cliente para la conexión WebSocket en producción
     const socket = io('wss://biometricov4.onrender.com', {
       transports: ['websocket'],
       secure: true,
       reconnection: true,
       reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionDelay: 1000,
+      forceNew: true // Forzar nueva conexión para evitar reutilización de sockets
     });
     
     socketRef.current = socket;
     
     socket.on('connect', () => {
-      console.log('Connected to Render signaling server');
-      socket.emit('join-room', { roomId, userName });
+      console.log('✅ Connected to Render signaling server with socket ID:', socket.id);
+      setConnectionStatus('connected');
+      
+      // 🔒 AJUSTE 3: Agregar control para evitar reconexiones automáticas múltiples
+      if (!hasJoinedRoom.current) {
+        console.log('🚪 Joining room for the first time...');
+        socket.emit('join-room', { roomId, userName });
+        hasJoinedRoom.current = true;
+      } else {
+        console.log('⚠️ Already joined room, skipping duplicate join');
+      }
     });
 
     socket.on('user-joined', (data) => {
-      console.log('User joined:', data);
+      console.log('👤 User joined event received:', data);
       setParticipants(data.participants);
-      if (data.shouldCreateOffer) {
+      if (data.shouldCreateOffer && data.userId !== socket.id) {
+        console.log('📤 Creating offer for new participant');
         createOffer();
       }
     });
 
     socket.on('user-left', (data) => {
-      console.log('User left:', data);
+      console.log('👋 User left event received:', data);
       setParticipants(data.participants);
       setRemoteStream(null);
       if (remoteVideoRef.current) {
@@ -97,25 +109,42 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     });
 
     socket.on('offer', async (data) => {
-      await handleOffer(data.offer);
+      console.log('📥 Received offer from:', data.from);
+      if (data.from !== socket.id) {
+        await handleOffer(data.offer);
+      }
     });
 
     socket.on('answer', async (data) => {
-      await handleAnswer(data.answer);
+      console.log('📨 Received answer from:', data.from);
+      if (data.from !== socket.id) {
+        await handleAnswer(data.answer);
+      }
     });
 
     socket.on('ice-candidate', async (data) => {
-      await handleIceCandidate(data.candidate);
+      console.log('🧊 Received ICE candidate from:', data.from);
+      if (data.from !== socket.id) {
+        await handleIceCandidate(data.candidate);
+      }
     });
 
     socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
+      console.error('❌ Socket connection error:', error);
       setError('Failed to connect to signaling server');
+      setConnectionStatus('disconnected');
     });
 
-    socket.on('disconnect', () => {
-      console.log('Disconnected from signaling server');
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Disconnected from signaling server:', reason);
       setConnectionStatus('disconnected');
+      hasJoinedRoom.current = false; // Reset join flag on disconnect
+    });
+
+    socket.on('reconnect', () => {
+      console.log('🔄 Reconnected to signaling server');
+      setConnectionStatus('connected');
+      hasJoinedRoom.current = false; // Reset flag to allow rejoin
     });
   };
 
@@ -149,17 +178,17 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     // Handle remote stream
     peerConnection.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      console.log('Received remote stream');
+      console.log('📺 Received remote stream');
       setRemoteStream(remoteStream);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
-      setConnectionStatus('connected');
     };
 
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
-      if (event.candidate && socketRef.current) {
+      if (event.candidate && socketRef.current?.connected) {
+        console.log('🧊 Sending ICE candidate');
         socketRef.current.emit('ice-candidate', {
           candidate: event.candidate,
           roomId
@@ -170,30 +199,38 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     // Handle connection state changes
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection.connectionState;
-      console.log('Connection state:', state);
+      console.log('🔗 Peer connection state:', state);
       
       if (state === 'connected') {
-        setConnectionStatus('connected');
+        console.log('✅ Peer connection established successfully');
       } else if (state === 'disconnected' || state === 'failed') {
-        setConnectionStatus('disconnected');
+        console.log('❌ Peer connection lost');
+        setRemoteStream(null);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+        }
       }
     };
 
     // Log ICE connection state changes
     peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', peerConnection.iceConnectionState);
+      console.log('🧊 ICE connection state:', peerConnection.iceConnectionState);
     };
 
     // Log ICE gathering state changes
     peerConnection.onicegatheringstatechange = () => {
-      console.log('ICE gathering state:', peerConnection.iceGatheringState);
+      console.log('🔍 ICE gathering state:', peerConnection.iceGatheringState);
     };
   };
 
   const createOffer = async () => {
-    if (!peerConnectionRef.current || !socketRef.current) return;
+    if (!peerConnectionRef.current || !socketRef.current?.connected) {
+      console.log('⚠️ Cannot create offer: peer connection or socket not ready');
+      return;
+    }
     
     try {
+      console.log('📤 Creating offer...');
       const offer = await peerConnectionRef.current.createOffer();
       await peerConnectionRef.current.setLocalDescription(offer);
       
@@ -201,15 +238,20 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         offer,
         roomId
       });
+      console.log('✅ Offer sent successfully');
     } catch (err) {
-      console.error('Error creating offer:', err);
+      console.error('❌ Error creating offer:', err);
     }
   };
 
   const handleOffer = async (offer: RTCSessionDescriptionInit) => {
-    if (!peerConnectionRef.current || !socketRef.current) return;
+    if (!peerConnectionRef.current || !socketRef.current?.connected) {
+      console.log('⚠️ Cannot handle offer: peer connection or socket not ready');
+      return;
+    }
     
     try {
+      console.log('📥 Handling received offer...');
       await peerConnectionRef.current.setRemoteDescription(offer);
       const answer = await peerConnectionRef.current.createAnswer();
       await peerConnectionRef.current.setLocalDescription(answer);
@@ -218,34 +260,45 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         answer,
         roomId
       });
+      console.log('✅ Answer sent successfully');
     } catch (err) {
-      console.error('Error handling offer:', err);
+      console.error('❌ Error handling offer:', err);
     }
   };
 
   const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
-    if (!peerConnectionRef.current) return;
+    if (!peerConnectionRef.current) {
+      console.log('⚠️ Cannot handle answer: peer connection not ready');
+      return;
+    }
     
     try {
       // Check if the peer connection is in the correct state to receive an answer
       if (peerConnectionRef.current.signalingState === 'stable') {
-        console.log('Peer connection already stable, ignoring duplicate answer');
+        console.log('⚠️ Peer connection already stable, ignoring duplicate answer');
         return;
       }
       
+      console.log('📨 Handling received answer...');
       await peerConnectionRef.current.setRemoteDescription(answer);
+      console.log('✅ Answer handled successfully');
     } catch (err) {
-      console.error('Error handling answer:', err);
+      console.error('❌ Error handling answer:', err);
     }
   };
 
   const handleIceCandidate = async (candidate: RTCIceCandidateInit) => {
-    if (!peerConnectionRef.current) return;
+    if (!peerConnectionRef.current) {
+      console.log('⚠️ Cannot handle ICE candidate: peer connection not ready');
+      return;
+    }
     
     try {
+      console.log('🧊 Adding ICE candidate...');
       await peerConnectionRef.current.addIceCandidate(candidate);
+      console.log('✅ ICE candidate added successfully');
     } catch (err) {
-      console.error('Error handling ICE candidate:', err);
+      console.error('❌ Error handling ICE candidate:', err);
     }
   };
 
@@ -270,6 +323,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   };
 
   const cleanup = () => {
+    console.log('🧹 Cleaning up WebRTC resources...');
+    
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
     }
@@ -281,6 +336,8 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     if (socketRef.current) {
       socketRef.current.disconnect();
     }
+    
+    hasJoinedRoom.current = false;
   };
 
   const handleEndCall = () => {
@@ -358,7 +415,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         {/* Server Info */}
         <div className="absolute bottom-4 left-4">
           <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-xs">
-            🛰️ Render + 🌐 Google STUN + 🔁 OpenRelay TURN
+            🛰️ Render + 🌐 Google STUN + 🔁 OpenRelay TURN + 🔒 Anti-Duplicate
           </div>
         </div>
 

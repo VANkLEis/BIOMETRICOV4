@@ -54,12 +54,8 @@ io.on('connection', (socket) => {
   console.log('🔗 User connected:', socket.id);
 
   socket.on('join-room', ({ roomId, userName }) => {
-    console.log(`👤 User ${userName} (${socket.id}) joining room ${roomId}`);
+    console.log(`👤 User ${userName} (${socket.id}) attempting to join room ${roomId}`);
     
-    socket.join(roomId);
-    socket.userName = userName;
-    socket.roomId = roomId;
-
     // Initialize room if it doesn't exist
     if (!rooms.has(roomId)) {
       rooms.set(roomId, {
@@ -70,6 +66,17 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms.get(roomId);
+    
+    // 🔒 AJUSTE 1: Prevenir múltiples registros del mismo usuario en la misma sala
+    if (room.participants.find(p => p.id === socket.id)) {
+      console.log(`⚠️ User ${socket.id} already in room ${roomId}, skipping duplicate registration`);
+      return;
+    }
+    
+    socket.join(roomId);
+    socket.userName = userName;
+    socket.roomId = roomId;
+
     room.participants.push({
       id: socket.id,
       userName: userName,
@@ -92,21 +99,22 @@ io.on('connection', (socket) => {
       shouldCreateOffer: room.participants.length > 1
     });
 
+    console.log(`✅ User ${userName} successfully joined room ${roomId}`);
     console.log(`🏠 Room ${roomId} now has ${room.participants.length} participants`);
   });
 
   socket.on('offer', ({ offer, roomId }) => {
-    console.log(`📤 Relaying offer in room ${roomId}`);
+    console.log(`📤 Relaying offer in room ${roomId} from ${socket.id}`);
     socket.to(roomId).emit('offer', { offer, from: socket.id });
   });
 
   socket.on('answer', ({ answer, roomId }) => {
-    console.log(`📥 Relaying answer in room ${roomId}`);
+    console.log(`📥 Relaying answer in room ${roomId} from ${socket.id}`);
     socket.to(roomId).emit('answer', { answer, from: socket.id });
   });
 
   socket.on('ice-candidate', ({ candidate, roomId }) => {
-    console.log(`🧊 Relaying ICE candidate in room ${roomId}`);
+    console.log(`🧊 Relaying ICE candidate in room ${roomId} from ${socket.id}`);
     socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id });
   });
 
@@ -187,6 +195,7 @@ server.listen(port, () => {
   console.log(`🔒 Secure WebSocket: wss://biometricov4.onrender.com`);
   console.log(`🌐 STUN: Google (stun.l.google.com:19302)`);
   console.log(`🔁 TURN: OpenRelay (openrelay.metered.ca)`);
+  console.log(`✅ Anti-duplicate protection enabled`);
 });
 
 // Graceful shutdown
