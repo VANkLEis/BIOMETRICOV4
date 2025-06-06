@@ -48,10 +48,10 @@ class VideoCallManager {
             remoteVideoReady: false
         };
         
-        // Configuración de servidor
+        // 🔧 FIXED: Configuración de servidor corregida
         this.serverConfig = {
             development: 'ws://localhost:3000',
-            production: 'wss://biometricov4.onrender.com'
+            production: 'wss://biometricov4.onrender.com' // Backend server, not frontend
         };
         
         this.debugMode = true;
@@ -117,24 +117,28 @@ class VideoCallManager {
         }
     }
 
-    // 2. CONFIGURAR PEER CONNECTION CON ICE SERVERS ROBUSTOS
+    // 2. 🔧 FIXED: CONFIGURAR PEER CONNECTION CON NUEVOS STUN/TURN SERVERS
     createPeerConnection() {
         const configuration = {
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun.stunprotocol.org:3478' },
-                { urls: 'stun:stun.voiparound.com' },
+                // 🔧 UPDATED: Usar los nuevos servidores STUN/TURN especificados
                 {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
+                    urls: "stun:openrelay.metered.ca:80"
                 },
                 {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
+                    urls: "turn:openrelay.metered.ca:80",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                {
+                    urls: "turn:openrelay.metered.ca:443",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                {
+                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
                 }
             ],
             iceCandidatePoolSize: 10
@@ -379,19 +383,20 @@ class VideoCallManager {
         this._log('✅ Remote video rendering started');
     }
 
-    // 8. CONECTAR AL SERVIDOR DE SEÑALIZACIÓN
+    // 8. 🔧 FIXED: CONECTAR AL SERVIDOR DE SEÑALIZACIÓN CON MEJOR MANEJO DE ERRORES
     async connectToSignaling() {
         return new Promise((resolve, reject) => {
             const isLocalhost = window.location.hostname === 'localhost' || 
                                window.location.hostname === '127.0.0.1';
             
+            // 🔧 FIXED: Usar la URL correcta del backend
             const serverUrl = isLocalhost ? 
                 this.serverConfig.development : 
                 this.serverConfig.production;
 
-            this._log(`Connecting to signaling server: ${serverUrl}`);
+            this._log(`🔗 FIXED: Connecting to signaling server: ${serverUrl}`);
 
-            // Importar Socket.IO dinámicamente
+            // 🔧 FIXED: Mejor manejo de importación de Socket.IO
             import('socket.io-client').then(({ io }) => {
                 this.socket = io(serverUrl, {
                     transports: ['websocket', 'polling'],
@@ -401,28 +406,63 @@ class VideoCallManager {
                     forceNew: true,
                     reconnection: true,
                     reconnectionAttempts: 5,
-                    reconnectionDelay: 2000
+                    reconnectionDelay: 2000,
+                    // 🔧 ADDED: Headers adicionales para CORS
+                    extraHeaders: {
+                        'Origin': window.location.origin
+                    },
+                    // 🔧 ADDED: Query params para identificación
+                    query: {
+                        'client-type': 'webrtc-room',
+                        'timestamp': Date.now()
+                    }
                 });
 
                 const timeout = setTimeout(() => {
-                    reject(new Error('Connection timeout'));
+                    this._log('❌ FIXED: Connection timeout to signaling server', 'error');
+                    reject(new Error('Connection timeout to signaling server. Please check if the server is running.'));
                 }, 15000);
 
                 this.socket.on('connect', () => {
                     clearTimeout(timeout);
-                    this._log('✅ Connected to signaling server');
+                    this._log('✅ FIXED: Connected to signaling server successfully');
                     this.setupSocketEvents();
                     resolve();
                 });
 
                 this.socket.on('connect_error', (error) => {
                     clearTimeout(timeout);
-                    this._log(`❌ Connection error: ${error.message}`, 'error');
-                    reject(error);
+                    this._log(`❌ FIXED: Connection error: ${error.message}`, 'error');
+                    
+                    // 🔧 ADDED: Mensajes de error más específicos
+                    let errorMessage = 'Failed to connect to signaling server. ';
+                    
+                    if (error.message.includes('timeout')) {
+                        errorMessage += 'The server may be starting up or unreachable.';
+                    } else if (error.message.includes('CORS')) {
+                        errorMessage += 'CORS policy error. Please check server configuration.';
+                    } else if (error.message.includes('NetworkError')) {
+                        errorMessage += 'Network connectivity issue. Please check your internet connection.';
+                    } else {
+                        errorMessage += error.message;
+                    }
+                    
+                    reject(new Error(errorMessage));
+                });
+
+                // 🔧 ADDED: Manejo de desconexión
+                this.socket.on('disconnect', (reason) => {
+                    this._log(`🔌 FIXED: Disconnected from signaling server: ${reason}`, 'warn');
+                });
+
+                // 🔧 ADDED: Confirmación de conexión del servidor
+                this.socket.on('connection-confirmed', (data) => {
+                    this._log(`✅ FIXED: Connection confirmed by server: ${data.message}`);
                 });
 
             }).catch(error => {
-                reject(new Error('Failed to load Socket.IO: ' + error.message));
+                this._log(`❌ FIXED: Failed to load Socket.IO: ${error.message}`, 'error');
+                reject(new Error('Failed to load Socket.IO library: ' + error.message));
             });
         });
     }
@@ -577,6 +617,7 @@ class VideoCallManager {
             videoRendererStats: this.stats,
             isHost: this.isHost,
             roomId: this.roomId,
+            serverUrl: this.socket ? this.socket.io.uri : 'not connected',
             canvasInfo: {
                 localCanvasExists: !!this.localCanvas,
                 remoteCanvasExists: !!this.remoteCanvas,
@@ -589,7 +630,7 @@ class VideoCallManager {
     // 15. INICIALIZACIÓN COMPLETA
     async initialize(roomId, userName, isHost) {
         try {
-            this._log(`🚀 Initializing video call as ${isHost ? 'HOST' : 'GUEST'}`);
+            this._log(`🚀 FIXED: Initializing video call as ${isHost ? 'HOST' : 'GUEST'}`);
             
             this.roomId = roomId;
             this.isHost = isHost;
@@ -606,10 +647,10 @@ class VideoCallManager {
             // 4. Configurar video local
             await this.setupLocalVideo();
             
-            this._log('✅ Video call initialized successfully');
+            this._log('✅ FIXED: Video call initialized successfully');
             
         } catch (error) {
-            this._log(`❌ Failed to initialize video call: ${error.message}`, 'error');
+            this._log(`❌ FIXED: Failed to initialize video call: ${error.message}`, 'error');
             throw error;
         }
     }
@@ -736,7 +777,7 @@ let videoCallManager = null;
 // Función para inicializar desde el código existente
 export async function initializeVideoCall(roomId, userName, isHost) {
     try {
-        this._log('🚀 Starting VideoCallManager initialization...');
+        console.log('🚀 FIXED: Starting VideoCallManager initialization...');
         
         // Limpiar instancia anterior si existe
         if (videoCallManager) {
@@ -748,13 +789,13 @@ export async function initializeVideoCall(roomId, userName, isHost) {
         
         // Debug inicial
         setTimeout(() => {
-            console.log('📊 Initial debug:', videoCallManager.getDebugInfo());
+            console.log('📊 FIXED: Initial debug:', videoCallManager.getDebugInfo());
         }, 3000);
         
         return videoCallManager;
         
     } catch (error) {
-        console.error('❌ Failed to start video call:', error);
+        console.error('❌ FIXED: Failed to start video call:', error);
         throw error;
     }
 }
