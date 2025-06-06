@@ -37,7 +37,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
 
-  // 🔧 ADDED: Estados para debugging de canvas
+  // 🔧 ADDED: Estados para debugging de canvas (opcional)
   const [canvasDebugInfo, setCanvasDebugInfo] = useState<any>(null);
   const [showCanvasDebug, setShowCanvasDebug] = useState(false);
 
@@ -45,7 +45,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
-    if (joinStartTime && connectionState !== 'peer_connected') {
+    if (joinStartTime && connectionState !== 'peer_connected' && connectionState !== 'socket_streaming') {
       interval = setInterval(() => {
         setElapsedTime(Date.now() - joinStartTime);
       }, 100);
@@ -74,7 +74,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       case 'requesting_media':
         return `Requesting camera permissions... (${formatElapsedTime(elapsedTime)})`;
       case 'media_ready':
-        return 'Media ready - Establishing connection...';
+        return 'Media ready - Waiting for participants...';
       case 'peer_connected':
         return `Call active via ${connectionMethod}`;
       case 'socket_streaming':
@@ -96,9 +96,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         return 'bg-green-600';
       case 'requesting_media':
       case 'joining':
-      case 'media_ready':
         return 'bg-yellow-600';
       case 'connected':
+      case 'media_ready':
         return 'bg-blue-600';
       case 'error':
         return 'bg-red-600';
@@ -114,7 +114,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     const connectionManager = new ConnectionManager();
     connectionManagerRef.current = connectionManager;
     
-    // Inicializar CanvasRenderer independiente para debugging
+    // Inicializar CanvasRenderer independiente para debugging (opcional)
     const canvasRenderer = new CanvasRenderer();
     canvasRendererRef.current = canvasRenderer;
     
@@ -195,7 +195,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // Solicitar medios y agregar al connection manager
+  // 🔧 FIXED: Solicitar medios y agregar al connection manager automáticamente
   const handleRequestMedia = async () => {
     if (!connectionManagerRef.current) return;
     
@@ -216,7 +216,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       console.log('✅ Media obtained:', result);
       
       setLocalStream(result.stream);
-      setConnectionState('media_ready');
       
       // Configurar video local
       if (localVideoRef.current && result.stream) {
@@ -224,8 +223,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         localVideoRef.current.play().catch(console.error);
       }
       
-      // Agregar stream al connection manager
+      // 🔧 FIXED: Agregar stream al connection manager automáticamente
       await connectionManagerRef.current.addLocalStream(result.stream);
+      
+      console.log('✅ Stream added to connection manager');
       
     } catch (err: any) {
       console.error('❌ Failed to get media:', err);
@@ -234,7 +235,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
-  // 🔧 ADDED: Test de canvas independiente
+  // 🔧 ADDED: Test de canvas independiente (opcional)
   const handleCanvasTest = async () => {
     if (!canvasRendererRef.current || !localStream) {
       alert('❌ No local stream available for canvas test');
@@ -363,6 +364,12 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       onStateChange: (newState: string, oldState: string, data: any) => {
         setConnectionState(newState);
         setConnectionInfo(connectionManager.getState());
+        
+        if (newState === 'peer_connected') {
+          setConnectionMethod('WebRTC');
+        } else if (newState === 'socket_streaming') {
+          setConnectionMethod('Socket.IO');
+        }
       },
       onParticipantsChange: setParticipants,
       onRemoteStream: (stream: MediaStream | null) => {
@@ -778,11 +785,16 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         )}
 
         {/* No Remote Stream Message */}
-        {!remoteStream && (connectionState === 'peer_connected' || connectionState === 'socket_streaming') && (
+        {!remoteStream && (connectionState === 'peer_connected' || connectionState === 'socket_streaming' || connectionState === 'media_ready') && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
             <div className="text-center text-white">
               <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-xl">Waiting for other participants...</p>
+              <p className="text-xl">
+                {connectionState === 'media_ready' 
+                  ? 'Waiting for other participants...' 
+                  : 'Waiting for other participants to join...'
+                }
+              </p>
               <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
             </div>
           </div>

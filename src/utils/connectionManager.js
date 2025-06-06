@@ -1,5 +1,4 @@
 import { io } from 'socket.io-client';
-import CanvasRenderer from './canvasRenderer.js';
 
 class ConnectionManager {
   constructor() {
@@ -49,8 +48,10 @@ class ConnectionManager {
     this.heartbeatInterval = null;
     this.streamingInterval = null;
     
-    // 🔧 FIXED: Usar CanvasRenderer modular
-    this.canvasRenderer = new CanvasRenderer();
+    // 🔧 FIXED: Elementos para Socket.IO streaming (sin CanvasRenderer por ahora)
+    this.localCanvas = null;
+    this.remoteCanvas = null;
+    this.localVideo = null;
     this.frameCount = 0;
     this.lastFrameTime = 0;
   }
@@ -359,7 +360,7 @@ class ConnectionManager {
       }
     });
 
-    // 🔧 FIXED: Socket.IO streaming con CanvasRenderer
+    // 🔧 FIXED: Socket.IO streaming simplificado
     this.socket.on('stream-frame', (data) => {
       if (data.from !== this.socket.id && data.roomId === this.roomId) {
         this._handleSocketStreamFrame(data);
@@ -462,8 +463,8 @@ class ConnectionManager {
       await this._initiatePeerConnection();
     } else {
       this._log(`⏳ Waiting for other participants (current: ${this.participants.length})`);
-      // Start Socket.IO streaming as fallback for single user
-      this._useSocketStreamingFallback();
+      // 🔧 FIXED: Cambiar estado a media_ready en lugar de socket_streaming
+      this._setState('media_ready');
     }
 
     return { success: true };
@@ -631,7 +632,7 @@ class ConnectionManager {
     }
   }
 
-  // 🔧 FIXED: Socket.IO streaming con CanvasRenderer modular
+  // 🔧 FIXED: Socket.IO streaming simplificado (sin CanvasRenderer por ahora)
   async _useSocketStreamingFallback() {
     this._log('🔄 Using Socket.IO streaming fallback');
     this._setState('socket_streaming');
@@ -642,16 +643,35 @@ class ConnectionManager {
     }
 
     try {
-      // Inicializar canvas local para captura
-      await this.canvasRenderer.initializeLocalCanvas(this.localStream);
-      this._log('✅ Local canvas initialized for streaming');
-
+      // Crear elementos básicos para captura
+      this._setupBasicCapture();
+      
       // Iniciar captura de frames
       this._startFrameCapture();
 
     } catch (error) {
       this._log(`❌ Error setting up Socket.IO streaming: ${error.message}`, 'error');
     }
+  }
+
+  _setupBasicCapture() {
+    // Crear video element oculto para captura
+    this.localVideo = document.createElement('video');
+    this.localVideo.srcObject = this.localStream;
+    this.localVideo.autoplay = true;
+    this.localVideo.playsInline = true;
+    this.localVideo.muted = true;
+    this.localVideo.style.display = 'none';
+    document.body.appendChild(this.localVideo);
+
+    // Crear canvas para captura
+    this.localCanvas = document.createElement('canvas');
+    this.localCanvas.width = 320;
+    this.localCanvas.height = 240;
+    this.localCanvas.style.display = 'none';
+    document.body.appendChild(this.localCanvas);
+
+    this._log('✅ Basic capture elements created');
   }
 
   _startFrameCapture() {
@@ -671,8 +691,7 @@ class ConnectionManager {
       }
 
       try {
-        // Capturar frame usando CanvasRenderer
-        const frameData = this.canvasRenderer.captureLocalFrame();
+        const frameData = this._captureFrame();
         
         if (frameData) {
           // Enviar frame
@@ -687,10 +706,6 @@ class ConnectionManager {
           // Log cada 10 frames para no saturar
           if (this.frameCount % 10 === 0) {
             this._log(`📤 Sent ${this.frameCount} frames via Socket.IO`);
-            
-            // Verificar estado de elementos DOM
-            const stats = this.canvasRenderer.getStats();
-            this._log(`📊 Canvas stats: ${JSON.stringify(stats)}`);
           }
         }
       } catch (error) {
@@ -699,26 +714,47 @@ class ConnectionManager {
     }, 500); // 2 FPS
   }
 
+  _captureFrame() {
+    if (!this.localVideo || !this.localCanvas || this.localVideo.readyState < 2) {
+      return null;
+    }
+
+    const ctx = this.localCanvas.getContext('2d');
+    if (!ctx) return null;
+
+    try {
+      ctx.clearRect(0, 0, this.localCanvas.width, this.localCanvas.height);
+      ctx.drawImage(this.localVideo, 0, 0, this.localCanvas.width, this.localCanvas.height);
+      return this.localCanvas.toDataURL('image/jpeg', 0.6);
+    } catch (error) {
+      this._log(`❌ Error in _captureFrame: ${error.message}`, 'error');
+      return null;
+    }
+  }
+
   async _handleSocketStreamFrame(data) {
     try {
-      // Inicializar canvas remoto si no existe
-      if (!this.canvasRenderer.remoteCanvas) {
-        this._log('🖼️ Initializing remote canvas for received frames');
+      // Crear canvas remoto si no existe
+      if (!this.remoteCanvas) {
+        this._log('🖼️ Creating remote canvas for received frames');
         
-        // Crear un video element temporal para el stream
-        const tempVideo = document.createElement('video');
-        const canvasInfo = this.canvasRenderer.initializeRemoteCanvas(tempVideo);
-        
-        // Crear stream desde canvas y notificar
-        this.remoteStream = canvasInfo.stream;
+        this.remoteCanvas = document.createElement('canvas');
+        this.remoteCanvas.width = 320;
+        this.remoteCanvas.height = 240;
+        this.remoteCanvas.style.display = 'none';
+        document.body.appendChild(this.remoteCanvas);
+
+        // Crear stream desde canvas
+        const stream = this.remoteCanvas.captureStream(2);
+        this.remoteStream = stream;
         
         if (this.callbacks.onRemoteStream) {
-          this.callbacks.onRemoteStream(this.remoteStream);
+          this.callbacks.onRemoteStream(stream);
         }
       }
 
-      // Renderizar frame usando CanvasRenderer
-      const success = await this.canvasRenderer.renderRemoteFrame(data.frame);
+      // Renderizar frame
+      const success = await this._renderFrame(data.frame);
       
       if (success) {
         this.lastFrameTime = Date.now();
@@ -732,6 +768,40 @@ class ConnectionManager {
     } catch (error) {
       this._log(`❌ Error handling socket stream frame: ${error.message}`, 'error');
     }
+  }
+
+  _renderFrame(frameData) {
+    return new Promise((resolve) => {
+      if (!this.remoteCanvas || !frameData) {
+        resolve(false);
+        return;
+      }
+
+      const ctx = this.remoteCanvas.getContext('2d');
+      if (!ctx) {
+        resolve(false);
+        return;
+      }
+
+      const img = new Image();
+      
+      img.onload = () => {
+        try {
+          ctx.clearRect(0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
+          ctx.drawImage(img, 0, 0, this.remoteCanvas.width, this.remoteCanvas.height);
+          resolve(true);
+        } catch (error) {
+          this._log(`❌ Error drawing frame: ${error.message}`, 'error');
+          resolve(false);
+        }
+      };
+
+      img.onerror = () => {
+        resolve(false);
+      };
+
+      img.src = frameData;
+    });
   }
 
   _attemptReconnect() {
@@ -796,11 +866,9 @@ class ConnectionManager {
       peerConnectionState: this.peerConnection ? this.peerConnection.connectionState : null,
       reconnectAttempts: this.reconnectAttempts,
       serverUrl: this.socket ? this.socket.io.uri : null,
-      // 🔧 ADDED: Información adicional de streaming
       frameCount: this.frameCount,
       lastFrameTime: this.lastFrameTime,
-      streamingActive: !!this.streamingInterval,
-      canvasStats: this.canvasRenderer.getStats()
+      streamingActive: !!this.streamingInterval
     };
   }
 
@@ -817,8 +885,25 @@ class ConnectionManager {
       this.streamingInterval = null;
     }
 
-    // Limpiar CanvasRenderer
-    this.canvasRenderer.cleanup();
+    // Limpiar elementos DOM
+    if (this.localVideo) {
+      this.localVideo.pause();
+      this.localVideo.srcObject = null;
+      if (this.localVideo.parentNode) {
+        this.localVideo.parentNode.removeChild(this.localVideo);
+      }
+      this.localVideo = null;
+    }
+
+    if (this.localCanvas && this.localCanvas.parentNode) {
+      this.localCanvas.parentNode.removeChild(this.localCanvas);
+      this.localCanvas = null;
+    }
+
+    if (this.remoteCanvas && this.remoteCanvas.parentNode) {
+      this.remoteCanvas.parentNode.removeChild(this.remoteCanvas);
+      this.remoteCanvas = null;
+    }
 
     if (this.peerConnection) {
       this.peerConnection.close();
