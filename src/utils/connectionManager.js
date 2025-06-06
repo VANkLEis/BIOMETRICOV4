@@ -1,14 +1,3 @@
-/**
- * ConnectionManager - Sistema robusto de conexión WebRTC con múltiples fallbacks
- * 
- * Maneja:
- * - Conexión directa WebRTC
- * - Fallback a Simple-Peer
- * - Fallback a Socket.IO streaming
- * - Reconexión automática
- * - Logging detallado
- */
-
 import { io } from 'socket.io-client';
 
 class ConnectionManager {
@@ -49,13 +38,14 @@ class ConnectionManager {
           credential: 'openrelayproject'
         }
       ],
-      connectionTimeout: 10000, // Reduced from 15000
-      reconnectAttempts: 3, // Reduced from 5
-      reconnectDelay: 1000 // Reduced from 2000
+      connectionTimeout: 15000, // Increased for deployment
+      reconnectAttempts: 5,
+      reconnectDelay: 2000
     };
     
     this.debugMode = true;
     this.reconnectAttempts = 0;
+    this.heartbeatInterval = null;
   }
 
   _log(message, level = 'info') {
@@ -98,29 +88,58 @@ class ConnectionManager {
   _getErrorSuggestion(error, context) {
     if (context === 'connectToSignaling' || context === 'joinRoom') {
       if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
-        return 'The signaling server is not running. Please start the server by running "npm run dev" in the server directory.';
+        return 'The signaling server may be starting up or unreachable. Please wait a moment and try again. If running locally, start the server with "npm run dev" in the server directory.';
       }
-      if (error.message.includes('CORS')) {
+      if (error.message.includes('CORS') || error.message.includes('blocked')) {
         return 'CORS error detected. Please check server configuration.';
       }
+      if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+        return 'Network connectivity issue. Please check your internet connection.';
+      }
     }
-    return 'Please check your internet connection and try again.';
+    return 'Please check your internet connection and try again. If the problem persists, the server may be temporarily unavailable.';
   }
 
-  /**
-   * Conecta al servidor de señalización con múltiples intentos
-   */
+  _getServerUrls() {
+    const currentHost = window.location.hostname;
+    const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1';
+    
+    this._log(`Detecting environment: ${currentHost} (localhost: ${isLocalhost})`);
+    
+    if (isLocalhost) {
+      // Local development - try local server first, then production fallback
+      return [
+        'http://localhost:3000',
+        'https://biometricov4.onrender.com'
+      ];
+    } else {
+      // Production deployment - use backend server
+      return [
+        'https://biometricov4.onrender.com'
+      ];
+    }
+  }
+
   async connectToSignaling() {
     const servers = this._getServerUrls();
     
+    this._log(`Attempting to connect to ${servers.length} server(s)...`);
+    
     for (let i = 0; i < servers.length; i++) {
       const serverUrl = servers[i];
-      this._log(`Attempting connection ${i + 1}/${servers.length} to: ${serverUrl}`);
+      this._log(`Connection attempt ${i + 1}/${servers.length}: ${serverUrl}`);
       
       try {
+        // First test HTTP connectivity
+        await this._testHttpConnectivity(serverUrl);
+        
+        // Then try Socket.IO connection
         await this._tryConnectToServer(serverUrl);
+        
         this._log(`✅ Successfully connected to: ${serverUrl}`);
+        this._startHeartbeat();
         return;
+        
       } catch (error) {
         this._log(`❌ Failed to connect to ${serverUrl}: ${error.message}`, 'warn');
         
@@ -128,33 +147,50 @@ class ConnectionManager {
           // Last attempt failed
           throw new Error(`Failed to connect to any signaling server. Last error: ${error.message}`);
         }
+        
+        // Wait before next attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
   }
 
-  _getServerUrls() {
-    const isLocalhost = window.location.hostname === 'localhost' || 
-                       window.location.hostname === '127.0.0.1';
+  async _testHttpConnectivity(serverUrl) {
+    const testUrl = serverUrl + '/health';
+    this._log(`Testing HTTP connectivity: ${testUrl}`);
     
-    if (isLocalhost) {
-      // Try multiple local configurations
-      return [
-        'http://localhost:3000',  // HTTP first for local development
-        'ws://localhost:3000',    // WebSocket
-        'https://biometricov4.onrender.com' // Fallback to production
-      ];
-    } else {
-      // Production - try HTTPS first
-      return [
-        'https://biometricov4.onrender.com',
-        'wss://biometricov4.onrender.com'
-      ];
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(testUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      this._log(`✅ HTTP connectivity test passed: ${data.status}`);
+      
+      return data;
+      
+    } catch (error) {
+      this._log(`❌ HTTP connectivity test failed: ${error.message}`, 'error');
+      throw error;
     }
   }
 
   async _tryConnectToServer(serverUrl) {
     return new Promise((resolve, reject) => {
-      this._log(`Connecting to signaling server: ${serverUrl}`);
+      this._log(`Establishing Socket.IO connection to: ${serverUrl}`);
       
       // Clean up existing socket
       if (this.socket) {
@@ -162,6 +198,7 @@ class ConnectionManager {
         this.socket = null;
       }
       
+      // Enhanced Socket.IO configuration for deployment
       this.socket = io(serverUrl, {
         transports: ['websocket', 'polling'],
         upgrade: true,
@@ -169,43 +206,83 @@ class ConnectionManager {
         timeout: this.config.connectionTimeout,
         forceNew: true,
         reconnection: false, // We handle reconnection manually
-        autoConnect: true
+        autoConnect: true,
+        withCredentials: true,
+        // Additional options for deployment
+        extraHeaders: {
+          'Origin': window.location.origin
+        },
+        query: {
+          'client-type': 'webrtc-room',
+          'timestamp': Date.now()
+        }
       });
 
       const timeout = setTimeout(() => {
         if (this.socket) {
           this.socket.disconnect();
         }
-        reject(new Error(`Connection timeout after ${this.config.connectionTimeout}ms`));
+        reject(new Error(`Socket.IO connection timeout after ${this.config.connectionTimeout}ms`));
       }, this.config.connectionTimeout);
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
-        this._log(`✅ Connected to signaling server: ${serverUrl}`);
+        this._log(`✅ Socket.IO connected: ${this.socket.id}`);
+        this._log(`   Transport: ${this.socket.io.engine.transport.name}`);
+        this._log(`   Server: ${serverUrl}`);
+        
         this._setupSocketListeners();
         resolve();
       });
 
       this.socket.on('connect_error', (error) => {
         clearTimeout(timeout);
-        this._log(`Connection error to ${serverUrl}: ${error.message}`, 'error');
+        this._log(`❌ Socket.IO connection error: ${error.message}`, 'error');
+        this._log(`   Error type: ${error.type}`);
+        this._log(`   Error description: ${error.description}`);
         reject(error);
       });
 
       this.socket.on('disconnect', (reason) => {
         clearTimeout(timeout);
-        this._log(`Disconnected from ${serverUrl}: ${reason}`, 'warn');
+        this._log(`🔌 Socket.IO disconnected: ${reason}`, 'warn');
+        
         if (reason !== 'io client disconnect') {
-          // Unexpected disconnect
           this._setState('disconnected');
+          this._attemptReconnect();
         }
+      });
+
+      // Listen for connection confirmation
+      this.socket.on('connection-confirmed', (data) => {
+        this._log(`✅ Connection confirmed by server: ${data.message}`);
+        this._log(`   Server time: ${new Date(data.serverTime).toISOString()}`);
       });
     });
   }
 
+  _startHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    
+    this.heartbeatInterval = setInterval(() => {
+      if (this.socket && this.socket.connected) {
+        this.socket.emit('heartbeat', { timestamp: Date.now() });
+      }
+    }, 30000); // Every 30 seconds
+    
+    this._log('Started heartbeat monitoring');
+  }
+
   _setupSocketListeners() {
+    // Heartbeat acknowledgment
+    this.socket.on('heartbeat-ack', (data) => {
+      this._log(`💓 Heartbeat acknowledged by server`);
+    });
+
     this.socket.on('user-joined', (data) => {
-      this._log(`User joined: ${JSON.stringify(data)}`);
+      this._log(`👤 User joined: ${JSON.stringify(data)}`);
       this.participants = data.participants || [];
       
       if (this.callbacks.onParticipantsChange) {
@@ -220,7 +297,7 @@ class ConnectionManager {
     });
 
     this.socket.on('user-left', (data) => {
-      this._log(`User left: ${JSON.stringify(data)}`);
+      this._log(`👋 User left: ${JSON.stringify(data)}`);
       this.participants = data.participants || [];
       
       if (this.callbacks.onParticipantsChange) {
@@ -249,25 +326,31 @@ class ConnectionManager {
       }
     });
 
+    // Fallback: Simple-Peer signaling
+    this.socket.on('simple-peer-signal', (data) => {
+      if (this.simplePeer && data.roomId === this.roomId) {
+        this._log('Received Simple-Peer signal');
+        this.simplePeer.signal(data.signal);
+      }
+    });
+
     // Fallback: Socket.IO streaming
-    this.socket.on('stream-data', (data) => {
-      this._handleSocketStream(data);
+    this.socket.on('stream-frame', (data) => {
+      if (data.roomId === this.roomId) {
+        this._handleSocketStreamFrame(data);
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
-      this._log(`Disconnected from signaling server: ${reason}`, 'warn');
+      this._log(`🔌 Socket disconnected: ${reason}`, 'warn');
       this._setState('disconnected');
       
-      // Only attempt reconnect for unexpected disconnections
       if (reason !== 'io client disconnect') {
         this._attemptReconnect();
       }
     });
   }
 
-  /**
-   * Se une a un room con mejor manejo de errores
-   */
   async joinRoom(roomId, userName, isHost = false) {
     try {
       this._setState('joining');
@@ -275,43 +358,60 @@ class ConnectionManager {
       this.userName = userName;
       this.isHost = isHost;
 
-      // Verificar si ya estamos conectados
+      this._log(`Joining room: ${roomId} as ${userName} (host: ${isHost})`);
+
+      // Ensure we're connected
       if (!this.socket || !this.socket.connected) {
         this._log('Socket not connected, attempting to connect...');
         await this.connectToSignaling();
       }
 
-      // Verificar conexión después del intento
+      // Verify connection after attempt
       if (!this.socket || !this.socket.connected) {
         throw new Error('Unable to establish connection to signaling server');
       }
 
-      this._log(`Joining room: ${roomId} as ${userName}`);
+      this._log(`Sending join-room request...`);
       
-      // Enviar join-room con timeout
+      // Send join-room with enhanced timeout handling
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error('Room join timeout'));
-        }, 5000);
+          reject(new Error('Room join timeout - server may be busy'));
+        }, 10000); // Increased timeout
 
         this.socket.emit('join-room', { 
           roomId, 
           userName 
         });
 
-        // Listen for successful join (user-joined event)
+        // Listen for successful join
         const onUserJoined = (data) => {
+          this._log(`Received user-joined event: ${JSON.stringify(data)}`);
+          
           if (data.participants && data.participants.includes(userName)) {
             clearTimeout(timeout);
             this.socket.off('user-joined', onUserJoined);
+            this._log(`✅ Successfully joined room ${roomId}`);
             resolve();
           }
         };
 
         this.socket.on('user-joined', onUserJoined);
+        
+        // Also resolve if we get a connection-confirmed event
+        const onConnectionConfirmed = () => {
+          clearTimeout(timeout);
+          this.socket.off('connection-confirmed', onConnectionConfirmed);
+          this._log(`✅ Connection confirmed, assuming room join successful`);
+          resolve();
+        };
+        
+        this.socket.on('connection-confirmed', onConnectionConfirmed);
       });
 
       this._setState('connected');
+      this._log(`✅ Room join completed successfully`);
+      
       return { success: true };
 
     } catch (error) {
@@ -321,14 +421,24 @@ class ConnectionManager {
     }
   }
 
-  /**
-   * Agrega stream local y inicia conexiones peer
-   */
   async addLocalStream(stream) {
     this._log('Adding local stream');
     this.localStream = stream;
 
-    // Si hay otros participantes, iniciar conexión inmediatamente
+    // Notify server about media readiness
+    if (this.socket && this.socket.connected && this.roomId) {
+      this.socket.emit('media-ready', {
+        roomId: this.roomId,
+        mediaInfo: {
+          hasVideo: stream.getVideoTracks().length > 0,
+          hasAudio: stream.getAudioTracks().length > 0,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        }
+      });
+    }
+
+    // If there are other participants, start peer connection
     if (this.participants.length > 1) {
       await this._initiatePeerConnection();
     }
@@ -336,33 +446,27 @@ class ConnectionManager {
     return { success: true };
   }
 
-  /**
-   * Inicia conexión peer con múltiples fallbacks
-   */
   async _initiatePeerConnection() {
     this._log('Initiating peer connection...');
     
     try {
-      // Método 1: WebRTC nativo
+      // Method 1: WebRTC nativo
       await this._tryNativeWebRTC();
     } catch (error) {
       this._log('Native WebRTC failed, trying Simple-Peer fallback', 'warn');
       
       try {
-        // Método 2: Simple-Peer fallback
+        // Method 2: Simple-Peer fallback
         await this._trySimplePeerFallback();
       } catch (error2) {
         this._log('Simple-Peer failed, using Socket.IO streaming fallback', 'warn');
         
-        // Método 3: Socket.IO streaming fallback
+        // Method 3: Socket.IO streaming fallback
         this._useSocketStreamingFallback();
       }
     }
   }
 
-  /**
-   * Método 1: WebRTC nativo
-   */
   async _tryNativeWebRTC() {
     this._log('Trying native WebRTC...');
     
@@ -371,7 +475,7 @@ class ConnectionManager {
       iceCandidatePoolSize: 10
     });
 
-    // Agregar tracks locales
+    // Add local tracks
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         this._log(`Adding ${track.kind} track to peer connection`);
@@ -415,7 +519,7 @@ class ConnectionManager {
       }
     };
 
-    // Crear offer si somos el host o el primero en tener medios
+    // Create offer if we're the host or first with media
     if (this.isHost || this.participants.length === 2) {
       await this._createOffer();
     }
@@ -491,71 +595,63 @@ class ConnectionManager {
     }
   }
 
-  /**
-   * Método 2: Simple-Peer fallback
-   */
   async _trySimplePeerFallback() {
     this._log('Trying Simple-Peer fallback...');
     
-    // Importar Simple-Peer dinámicamente
-    const SimplePeer = (await import('simple-peer')).default;
-    
-    const peer = new SimplePeer({
-      initiator: this.isHost,
-      trickle: false,
-      stream: this.localStream,
-      config: {
-        iceServers: this.config.iceServers
-      }
-    });
-
-    peer.on('signal', (data) => {
-      this._log('Sending Simple-Peer signal');
-      this.socket.emit('simple-peer-signal', {
-        signal: data,
-        roomId: this.roomId
-      });
-    });
-
-    peer.on('stream', (stream) => {
-      this._log('✅ Received remote stream via Simple-Peer');
-      this.remoteStream = stream;
+    try {
+      const SimplePeer = (await import('simple-peer')).default;
       
-      if (this.callbacks.onRemoteStream) {
-        this.callbacks.onRemoteStream(stream);
-      }
-    });
+      const peer = new SimplePeer({
+        initiator: this.isHost,
+        trickle: false,
+        stream: this.localStream,
+        config: {
+          iceServers: this.config.iceServers
+        }
+      });
 
-    peer.on('connect', () => {
-      this._log('✅ Simple-Peer connection established');
-      this._setState('peer_connected');
-    });
+      peer.on('signal', (data) => {
+        this._log('Sending Simple-Peer signal');
+        this.socket.emit('simple-peer-signal', {
+          signal: data,
+          roomId: this.roomId
+        });
+      });
 
-    peer.on('error', (error) => {
-      this._log(`Simple-Peer error: ${error.message}`, 'error');
+      peer.on('stream', (stream) => {
+        this._log('✅ Received remote stream via Simple-Peer');
+        this.remoteStream = stream;
+        
+        if (this.callbacks.onRemoteStream) {
+          this.callbacks.onRemoteStream(stream);
+        }
+      });
+
+      peer.on('connect', () => {
+        this._log('✅ Simple-Peer connection established');
+        this._setState('peer_connected');
+      });
+
+      peer.on('error', (error) => {
+        this._log(`Simple-Peer error: ${error.message}`, 'error');
+        throw error;
+      });
+
+      this.simplePeer = peer;
+      
+    } catch (error) {
+      this._log(`Failed to load Simple-Peer: ${error.message}`, 'error');
       throw error;
-    });
-
-    // Listener para señales de Simple-Peer
-    this.socket.on('simple-peer-signal', (data) => {
-      if (data.roomId === this.roomId) {
-        peer.signal(data.signal);
-      }
-    });
-
-    this.simplePeer = peer;
+    }
   }
 
-  /**
-   * Método 3: Socket.IO streaming fallback
-   */
   _useSocketStreamingFallback() {
     this._log('Using Socket.IO streaming fallback');
     this._setState('socket_streaming');
 
     if (!this.localStream) return;
 
-    // Configurar captura de frames para streaming
+    // Set up frame capture for streaming
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const video = document.createElement('video');
@@ -567,27 +663,31 @@ class ConnectionManager {
       canvas.width = video.videoWidth || 320;
       canvas.height = video.videoHeight || 240;
 
-      // Enviar frames cada 100ms (10 FPS)
+      // Send frames every 200ms (5 FPS) to reduce bandwidth
       const streamInterval = setInterval(() => {
         if (this.connectionState !== 'socket_streaming') {
           clearInterval(streamInterval);
           return;
         }
 
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frameData = canvas.toDataURL('image/jpeg', 0.5);
-        
-        this.socket.emit('stream-frame', {
-          roomId: this.roomId,
-          frame: frameData,
-          timestamp: Date.now()
-        });
-      }, 100);
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const frameData = canvas.toDataURL('image/jpeg', 0.3); // Lower quality for bandwidth
+          
+          this.socket.emit('stream-frame', {
+            roomId: this.roomId,
+            frame: frameData,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          this._log(`Error capturing frame: ${error.message}`, 'error');
+        }
+      }, 200);
 
       this.streamInterval = streamInterval;
     };
 
-    // Crear video remoto para mostrar frames recibidos
+    // Create remote video for received frames
     this._createRemoteVideoForSocketStream();
   }
 
@@ -597,36 +697,36 @@ class ConnectionManager {
     canvas.width = 320;
     canvas.height = 240;
 
-    // Convertir canvas a stream
-    const stream = canvas.captureStream(10); // 10 FPS
+    // Convert canvas to stream
+    const stream = canvas.captureStream(5); // 5 FPS
     this.remoteStream = stream;
 
     if (this.callbacks.onRemoteStream) {
       this.callbacks.onRemoteStream(stream);
     }
 
-    // Listener para frames remotos
-    this.socket.on('stream-frame', (data) => {
-      if (data.roomId === this.roomId) {
+    this._log('✅ Socket.IO streaming established');
+  }
+
+  _handleSocketStreamFrame(data) {
+    if (!this.remoteStream) return;
+    
+    try {
+      // Find canvas from the remote stream
+      const canvas = document.querySelector('canvas'); // This is a simplified approach
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
         const img = new Image();
         img.onload = () => {
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         };
         img.src = data.frame;
       }
-    });
-
-    this._log('✅ Socket.IO streaming established');
+    } catch (error) {
+      this._log(`Error handling socket stream frame: ${error.message}`, 'error');
+    }
   }
 
-  _handleSocketStream(data) {
-    // Manejar datos de stream via Socket.IO
-    this._log('Received socket stream data');
-  }
-
-  /**
-   * Reconexión automática mejorada
-   */
   _attemptReconnect() {
     if (this.reconnectAttempts >= this.config.reconnectAttempts) {
       this._log('Max reconnection attempts reached', 'error');
@@ -671,55 +771,10 @@ class ConnectionManager {
     }
   }
 
-  /**
-   * Test de conectividad mejorado
-   */
-  async testConnection() {
-    const servers = this._getServerUrls();
-    const results = [];
-
-    for (const serverUrl of servers) {
-      try {
-        const startTime = Date.now();
-        
-        // Try HTTP health check first
-        const healthUrl = serverUrl.replace(/^ws/, 'http').replace(/^wss/, 'https') + '/health';
-        const response = await fetch(healthUrl, { 
-          method: 'GET',
-          timeout: 5000 
-        });
-        
-        const endTime = Date.now();
-        const data = await response.json();
-        
-        results.push({
-          server: serverUrl,
-          status: 'success',
-          responseTime: endTime - startTime,
-          data: data
-        });
-      } catch (error) {
-        results.push({
-          server: serverUrl,
-          status: 'failed',
-          error: error.message
-        });
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Configurar callbacks
-   */
   setCallbacks(callbacks) {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
-  /**
-   * Obtener estado actual
-   */
   getState() {
     return {
       connectionState: this.connectionState,
@@ -735,11 +790,13 @@ class ConnectionManager {
     };
   }
 
-  /**
-   * Limpiar recursos
-   */
   cleanup() {
     this._log('Cleaning up ConnectionManager...');
+
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
 
     if (this.streamInterval) {
       clearInterval(this.streamInterval);
