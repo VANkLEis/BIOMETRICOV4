@@ -20,61 +20,26 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const [participants, setParticipants] = useState<string[]>([]);
   const [cameraStatus, setCameraStatus] = useState<'loading' | 'active' | 'error'>('loading');
   const [debugInfo, setDebugInfo] = useState<string>('');
-  const [showDebug, setShowDebug] = useState(true); // Show debug by default to help troubleshoot
-  const [isVideoRefReady, setIsVideoRefReady] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
   const [initializationStep, setInitializationStep] = useState<string>('Starting...');
+  const [isInitialized, setIsInitialized] = useState(false);
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRoom = useRef(false);
   const initializationAttempts = useRef(0);
-  const pendingStream = useRef<MediaStream | null>(null);
   const initializationTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Check if video ref is ready with timeout
-  useEffect(() => {
-    let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max
-    
-    const checkVideoRef = () => {
-      attempts++;
-      addDebugInfo(`🔍 Checking video ref (attempt ${attempts}/${maxAttempts})`);
-      
-      if (localVideoRef.current) {
-        addDebugInfo('✅ Local video ref is now available');
-        setIsVideoRefReady(true);
-        setInitializationStep('Video element ready');
-        
-        // If we have a pending stream, set it up now
-        if (pendingStream.current) {
-          addDebugInfo('🔄 Setting up pending stream...');
-          setInitializationStep('Setting up pending stream...');
-          setupLocalVideo(pendingStream.current).then(() => {
-            setCameraStatus('active');
-            setInitializationStep('Camera active');
-            pendingStream.current = null;
-          }).catch((err) => {
-            addDebugInfo(`❌ Failed to setup pending stream: ${err.message}`);
-            setInitializationStep(`Error: ${err.message}`);
-          });
-        }
-      } else if (attempts < maxAttempts) {
-        // Keep checking until ref is available
-        setTimeout(checkVideoRef, 100);
-      } else {
-        addDebugInfo('❌ Video ref not available after maximum attempts');
-        setError('Video element not ready. Please refresh the page.');
-        setCameraStatus('error');
-        setInitializationStep('Video element timeout');
-      }
-    };
-    
-    checkVideoRef();
+  const addDebugInfo = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugInfo(prev => `${prev}\n[${timestamp}] ${message}`);
+    console.log(`[DEBUG] ${message}`);
   }, []);
 
+  // 🔧 SOLUCIÓN 1: Inicializar inmediatamente sin esperar el video ref
   useEffect(() => {
-    // Only initialize when video ref is ready
-    if (isVideoRefReady) {
+    if (!isInitialized) {
+      setIsInitialized(true);
       setInitializationStep('Starting WebRTC initialization...');
       initializeWebRTC();
     }
@@ -82,9 +47,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     return () => {
       cleanup();
     };
-  }, [roomId, isVideoRefReady]);
+  }, [roomId, isInitialized]);
 
-  // Add initialization timeout
+  // 🔧 SOLUCIÓN 2: Timeout de inicialización más agresivo
   useEffect(() => {
     initializationTimeout.current = setTimeout(() => {
       if (cameraStatus === 'loading') {
@@ -93,7 +58,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         setCameraStatus('error');
         setInitializationStep('Initialization timeout');
       }
-    }, 30000); // 30 second timeout
+    }, 15000); // Reducido a 15 segundos
 
     return () => {
       if (initializationTimeout.current) {
@@ -101,12 +66,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       }
     };
   }, [cameraStatus]);
-
-  const addDebugInfo = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugInfo(prev => `${prev}\n[${timestamp}] ${message}`);
-    console.log(`[DEBUG] ${message}`);
-  }, []);
 
   const initializeWebRTC = async () => {
     try {
@@ -116,7 +75,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo(`🚀 Initializing WebRTC (attempt ${initializationAttempts.current})`);
       addDebugInfo(`🌍 Environment: ${window.location.hostname}`);
       addDebugInfo(`🔒 Protocol: ${window.location.protocol}`);
-      addDebugInfo(`📺 Video ref ready: ${!!localVideoRef.current}`);
       
       // Check if we're in a secure context
       if (!window.isSecureContext) {
@@ -144,24 +102,14 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       addDebugInfo(`✅ Media stream obtained: ${stream.getTracks().length} tracks`);
       setInitializationStep('Media stream obtained');
       
-      // Set up local video with enhanced error handling
-      if (localVideoRef.current) {
-        setInitializationStep('Setting up local video...');
-        await setupLocalVideo(stream);
-        setCameraStatus('active');
-        setInitializationStep('Camera active');
-      } else {
-        addDebugInfo('⚠️ Video ref not ready yet, storing stream for later');
-        setInitializationStep('Storing stream for later...');
-        pendingStream.current = stream;
-        // Don't set camera status to active yet
-      }
-
-      // Connect to signaling server
+      // 🔧 SOLUCIÓN 3: Configurar video de forma asíncrona sin bloquear
+      setInitializationStep('Setting up local video...');
+      setupLocalVideoAsync(stream);
+      
+      // Continue with other initialization while video sets up
       setInitializationStep('Connecting to signaling server...');
       connectToSignalingServer();
       
-      // Initialize peer connection
       setInitializationStep('Initializing peer connection...');
       initializePeerConnection(stream);
       
@@ -335,6 +283,36 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     throw new Error('Failed to get media stream with any constraints');
   };
 
+  // 🔧 SOLUCIÓN 4: Configuración asíncrona del video que no bloquea la inicialización
+  const setupLocalVideoAsync = (stream: MediaStream) => {
+    addDebugInfo('📺 Starting async local video setup...');
+    
+    // Set camera status to active immediately since we have the stream
+    setCameraStatus('active');
+    
+    // Try to set up video element asynchronously
+    const attemptVideoSetup = (attempt: number = 1) => {
+      if (attempt > 20) { // Max 20 attempts (2 seconds)
+        addDebugInfo('⚠️ Video element setup timeout, but stream is active');
+        return;
+      }
+      
+      if (localVideoRef.current) {
+        addDebugInfo(`✅ Video ref available on attempt ${attempt}, setting up video...`);
+        setupLocalVideo(stream).then(() => {
+          addDebugInfo('✅ Local video setup completed');
+        }).catch((err) => {
+          addDebugInfo(`⚠️ Video setup error: ${err.message}, but continuing...`);
+        });
+      } else {
+        addDebugInfo(`🔍 Video ref not ready (attempt ${attempt}/20), retrying...`);
+        setTimeout(() => attemptVideoSetup(attempt + 1), 100);
+      }
+    };
+    
+    attemptVideoSetup();
+  };
+
   const setupLocalVideo = async (stream: MediaStream): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (!localVideoRef.current) {
@@ -399,12 +377,11 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           });
           resolve(); // Resolve anyway to continue initialization
         }
-      }, 5000);
+      }, 3000); // Reduced timeout
     });
   };
 
   const connectToSignalingServer = () => {
-    // 🔒 AJUSTE 2: Usar wss:// en producción y verificar conexión antes de emitir
     const signalingUrl = window.location.hostname === 'localhost' 
       ? 'ws://localhost:3000'
       : 'wss://biometricov4.onrender.com';
@@ -428,7 +405,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setConnectionStatus('connected');
       setInitializationStep('Connected to signaling server');
       
-      // 🔒 AJUSTE 3: Verificar conexión antes de unirse a la sala
       if (!hasJoinedRoom.current && socket.connected) {
         addDebugInfo('🚪 Joining room for the first time...');
         setInitializationStep('Joining room...');
@@ -708,12 +684,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         localVideoRef.current.srcObject = null;
       }
       
-      // Clear pending stream
-      if (pendingStream.current) {
-        pendingStream.current.getTracks().forEach(track => track.stop());
-        pendingStream.current = null;
-      }
-      
       // Wait a moment before retrying
       await new Promise(resolve => setTimeout(resolve, 1000));
       
@@ -721,15 +691,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       const stream = await getUserMediaWithFallback();
       setLocalStream(stream);
       
-      if (localVideoRef.current) {
-        await setupLocalVideo(stream);
-        setCameraStatus('active');
-        setInitializationStep('Camera retry successful');
-      } else {
-        pendingStream.current = stream;
-        addDebugInfo('⚠️ Video ref still not ready, storing stream for later');
-        setInitializationStep('Storing stream for later...');
-      }
+      setupLocalVideoAsync(stream);
       
       // Update peer connection if it exists
       if (peerConnectionRef.current) {
@@ -767,11 +729,6 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         track.stop();
         addDebugInfo(`🛑 Stopped ${track.kind} track`);
       });
-    }
-    
-    if (pendingStream.current) {
-      pendingStream.current.getTracks().forEach(track => track.stop());
-      pendingStream.current = null;
     }
     
     if (peerConnectionRef.current) {
