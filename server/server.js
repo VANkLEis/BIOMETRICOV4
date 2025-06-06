@@ -10,73 +10,146 @@ const app = express();
 const server = createServer(app);
 const port = process.env.PORT || 3000;
 
-// CORS configuration for Render deployment - UPDATED with new frontend URL
+// ENHANCED CORS configuration - CRITICAL for deployment
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://biometricov4-lunq.onrender.com', // ✅ NEW FRONTEND URL
-    'https://biometricov4.onrender.com',
-    /\.onrender\.com$/,
-    /\.vercel\.app$/,
-    /\.netlify\.app$/
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-
-// Socket.IO configuration for secure WebSocket - UPDATED with new frontend URL
-const io = new Server(server, {
-  cors: {
-    origin: [
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
       'http://localhost:5173',
       'https://localhost:5173',
       'http://127.0.0.1:5173',
-      'https://biometricov4-lunq.onrender.com', // ✅ NEW FRONTEND URL
+      'https://biometricov4-lunq.onrender.com', // ✅ FRONTEND URL
       'https://biometricov4.onrender.com',
-      /\.onrender\.com$/,
-      /\.vercel\.app$/,
-      /\.netlify\.app$/
-    ],
+      // Add pattern matching for any Render subdomain
+      /^https:\/\/.*\.onrender\.com$/,
+      /^https:\/\/.*\.vercel\.app$/,
+      /^https:\/\/.*\.netlify\.app$/
+    ];
+    
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return allowed === origin;
+      } else if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      console.log(`✅ CORS: Allowing origin: ${origin}`);
+      callback(null, true);
+    } else {
+      console.log(`❌ CORS: Blocking origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept'],
+  credentials: true,
+  optionsSuccessStatus: 200
+}));
+
+// Add preflight handling
+app.options('*', cors());
+
+// Enhanced Socket.IO configuration
+const io = new Server(server, {
+  cors: {
+    origin: function (origin, callback) {
+      // Same logic as Express CORS
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'https://localhost:5173',
+        'http://127.0.0.1:5173',
+        'https://biometricov4-lunq.onrender.com',
+        'https://biometricov4.onrender.com',
+        /^https:\/\/.*\.onrender\.com$/,
+        /^https:\/\/.*\.vercel\.app$/,
+        /^https:\/\/.*\.netlify\.app$/
+      ];
+      
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (typeof allowed === 'string') {
+          return allowed === origin;
+        } else if (allowed instanceof RegExp) {
+          return allowed.test(origin);
+        }
+        return false;
+      });
+      
+      if (isAllowed) {
+        console.log(`✅ Socket.IO CORS: Allowing origin: ${origin}`);
+        callback(null, true);
+      } else {
+        console.log(`❌ Socket.IO CORS: Blocking origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true
   },
   transports: ['websocket', 'polling'],
+  allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,
   upgradeTimeout: 30000,
-  allowEIO3: true
+  maxHttpBufferSize: 1e6,
+  // CRITICAL: Allow all origins for Socket.IO as fallback
+  allowRequest: (req, callback) => {
+    const origin = req.headers.origin;
+    console.log(`🔍 Socket.IO connection attempt from: ${origin || 'no-origin'}`);
+    console.log(`🔍 Headers:`, req.headers);
+    callback(null, true); // Allow all for debugging
+  }
 });
 
-// Store room information with enhanced state tracking
+// Store room information
 const rooms = new Map();
-const userStates = new Map(); // Track individual user states
+const userStates = new Map();
 
-// Socket.IO connection handling with enhanced media request management
+// Enhanced connection logging
 io.on('connection', (socket) => {
-  console.log('🔗 User connected:', socket.id);
+  const clientIP = socket.handshake.address;
+  const origin = socket.handshake.headers.origin;
+  const userAgent = socket.handshake.headers['user-agent'];
+  
+  console.log('🔗 NEW CONNECTION:');
+  console.log(`   Socket ID: ${socket.id}`);
+  console.log(`   Origin: ${origin || 'no-origin'}`);
+  console.log(`   IP: ${clientIP}`);
+  console.log(`   User-Agent: ${userAgent?.substring(0, 100)}...`);
+  console.log(`   Transport: ${socket.conn.transport.name}`);
   
   // Initialize user state
   userStates.set(socket.id, {
     state: 'connected',
     roomId: null,
     userName: null,
-    mediaState: 'none', // none, requesting, ready, error
+    mediaState: 'none',
     lastHeartbeat: Date.now(),
-    joinedAt: Date.now()
+    joinedAt: Date.now(),
+    origin: origin,
+    ip: clientIP
   });
 
-  // 🔧 ENHANCED: Handle room joining without media requirements
+  // Enhanced room joining with detailed logging
   socket.on('join-room', ({ roomId, userName }) => {
-    console.log(`👤 User ${userName} (${socket.id}) joining room ${roomId}`);
+    console.log(`👤 JOIN-ROOM REQUEST:`);
+    console.log(`   User: ${userName} (${socket.id})`);
+    console.log(`   Room: ${roomId}`);
+    console.log(`   Origin: ${origin}`);
     
     // Update user state
     const userState = userStates.get(socket.id);
-    userState.roomId = roomId;
-    userState.userName = userName;
-    userState.state = 'in_room';
+    if (userState) {
+      userState.roomId = roomId;
+      userState.userName = userName;
+      userState.state = 'in_room';
+    }
     
     // Initialize room if it doesn't exist
     if (!rooms.has(roomId)) {
@@ -84,16 +157,16 @@ io.on('connection', (socket) => {
         participants: [],
         host: socket.id,
         created: new Date(),
-        mediaRequests: new Map() // Track media requests per user
+        mediaRequests: new Map()
       });
-      console.log(`🏠 Created new room: ${roomId}`);
+      console.log(`🏠 CREATED NEW ROOM: ${roomId}`);
     }
 
     const room = rooms.get(roomId);
     
     // Prevent duplicate registrations
     if (room.participants.find(p => p.id === socket.id)) {
-      console.log(`⚠️ User ${socket.id} already in room ${roomId}, skipping duplicate registration`);
+      console.log(`⚠️ DUPLICATE REGISTRATION: User ${socket.id} already in room ${roomId}`);
       return;
     }
     
@@ -105,8 +178,14 @@ io.on('connection', (socket) => {
       id: socket.id,
       userName: userName,
       joinedAt: new Date(),
-      mediaState: 'none'
+      mediaState: 'none',
+      origin: origin
     });
+
+    console.log(`✅ USER JOINED SUCCESSFULLY:`);
+    console.log(`   Room: ${roomId}`);
+    console.log(`   Participants: ${room.participants.length}`);
+    console.log(`   Participant list: ${room.participants.map(p => p.userName).join(', ')}`);
 
     // Notify existing participants about new user
     socket.to(roomId).emit('user-joined', {
@@ -124,41 +203,41 @@ io.on('connection', (socket) => {
       shouldCreateOffer: false
     });
 
-    console.log(`✅ User ${userName} joined room ${roomId} (${room.participants.length} participants)`);
-    console.log(`📊 Room state: ${room.participants.map(p => `${p.userName}(${p.mediaState || 'none'})`).join(', ')}`);
+    console.log(`📊 ROOM STATE: ${room.participants.map(p => `${p.userName}(${p.mediaState || 'none'})`).join(', ')}`);
   });
 
-  // Standard WebRTC signaling
+  // Enhanced signaling with logging
   socket.on('offer', ({ offer, roomId }) => {
-    console.log(`📤 Relaying offer in room ${roomId} from ${socket.id}`);
+    console.log(`📤 RELAYING OFFER: Room ${roomId}, From ${socket.id}`);
     socket.to(roomId).emit('offer', { offer, from: socket.id });
   });
 
   socket.on('answer', ({ answer, roomId }) => {
-    console.log(`📥 Relaying answer in room ${roomId} from ${socket.id}`);
+    console.log(`📥 RELAYING ANSWER: Room ${roomId}, From ${socket.id}`);
     socket.to(roomId).emit('answer', { answer, from: socket.id });
   });
 
   socket.on('ice-candidate', ({ candidate, roomId }) => {
-    console.log(`🧊 Relaying ICE candidate in room ${roomId} from ${socket.id}`);
+    console.log(`🧊 RELAYING ICE CANDIDATE: Room ${roomId}, From ${socket.id}`);
     socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id });
   });
 
   // Simple-Peer fallback signaling
   socket.on('simple-peer-signal', ({ signal, roomId }) => {
-    console.log(`🔄 Relaying Simple-Peer signal in room ${roomId} from ${socket.id}`);
+    console.log(`🔄 RELAYING SIMPLE-PEER SIGNAL: Room ${roomId}, From ${socket.id}`);
     socket.to(roomId).emit('simple-peer-signal', { signal, from: socket.id });
   });
 
   // Socket.IO streaming fallback
   socket.on('stream-frame', ({ roomId, frame, timestamp }) => {
-    console.log(`📺 Relaying stream frame in room ${roomId} from ${socket.id}`);
+    console.log(`📺 RELAYING STREAM FRAME: Room ${roomId}, From ${socket.id}, Size: ${frame?.length || 0}`);
     socket.to(roomId).emit('stream-frame', { frame, timestamp, from: socket.id });
   });
 
   // Media state updates
   socket.on('media-ready', ({ roomId, mediaInfo }) => {
-    console.log(`✅ Media ready for ${socket.id} in room ${roomId}`);
+    console.log(`✅ MEDIA READY: User ${socket.id}, Room ${roomId}`);
+    console.log(`   Media info:`, mediaInfo);
     
     const room = rooms.get(roomId);
     if (room) {
@@ -176,18 +255,48 @@ io.on('connection', (socket) => {
         mediaInfo: mediaInfo
       });
       
-      console.log(`📊 Updated room state: ${room.participants.map(p => `${p.userName}(${p.mediaState})`).join(', ')}`);
+      console.log(`📊 UPDATED ROOM STATE: ${room.participants.map(p => `${p.userName}(${p.mediaState})`).join(', ')}`);
     }
   });
 
+  // Connection diagnostics
+  socket.on('ping-test', (data) => {
+    console.log(`🏓 PING TEST: From ${socket.id}`);
+    socket.emit('pong-test', { 
+      ...data, 
+      serverTime: Date.now(),
+      socketId: socket.id,
+      origin: origin
+    });
+  });
+
+  // Heartbeat for connection monitoring
+  socket.on('heartbeat', (data) => {
+    const userState = userStates.get(socket.id);
+    if (userState) {
+      userState.lastHeartbeat = Date.now();
+    }
+    
+    socket.emit('heartbeat-ack', {
+      timestamp: Date.now(),
+      socketId: socket.id
+    });
+  });
+
   // Enhanced disconnect handling
-  socket.on('disconnect', () => {
-    console.log('❌ User disconnected:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log(`❌ USER DISCONNECTED:`);
+    console.log(`   Socket ID: ${socket.id}`);
+    console.log(`   Reason: ${reason}`);
+    console.log(`   Origin: ${origin}`);
     
     const userState = userStates.get(socket.id);
     
     if (userState && userState.roomId && rooms.has(userState.roomId)) {
       const room = rooms.get(userState.roomId);
+      
+      console.log(`   Was in room: ${userState.roomId}`);
+      console.log(`   Username: ${userState.userName}`);
       
       // Remove from participants
       room.participants = room.participants.filter(p => p.id !== socket.id);
@@ -204,12 +313,12 @@ io.on('connection', (socket) => {
         participants: room.participants.map(p => p.userName)
       });
 
+      console.log(`   Remaining participants: ${room.participants.length}`);
+
       // Clean up empty rooms
       if (room.participants.length === 0) {
         rooms.delete(userState.roomId);
-        console.log(`🗑️ Room ${userState.roomId} deleted (empty)`);
-      } else {
-        console.log(`🏠 Room ${userState.roomId} now has ${room.participants.length} participants`);
+        console.log(`🗑️ DELETED EMPTY ROOM: ${userState.roomId}`);
       }
     }
     
@@ -217,21 +326,21 @@ io.on('connection', (socket) => {
     userStates.delete(socket.id);
   });
 
-  // Connection diagnostics
-  socket.on('ping-test', (data) => {
-    socket.emit('pong-test', { 
-      ...data, 
-      serverTime: Date.now(),
-      socketId: socket.id 
-    });
+  // Send welcome message to confirm connection
+  socket.emit('connection-confirmed', {
+    socketId: socket.id,
+    serverTime: Date.now(),
+    message: 'Successfully connected to signaling server'
   });
 });
 
-// Health check endpoint with enhanced room information
+// Enhanced health check endpoint
 app.get('/health', (req, res) => {
   const totalUsers = userStates.size;
   const usersInRooms = Array.from(userStates.values()).filter(u => u.roomId).length;
   const usersWithMedia = Array.from(userStates.values()).filter(u => u.mediaState === 'ready').length;
+  
+  console.log(`🏥 HEALTH CHECK: ${totalUsers} users, ${rooms.size} rooms`);
   
   res.json({ 
     status: 'OK',
@@ -248,8 +357,24 @@ app.get('/health', (req, res) => {
       'simple-peer-fallback',
       'socket-streaming-fallback',
       'auto-reconnection',
-      'connection-diagnostics'
-    ]
+      'connection-diagnostics',
+      'enhanced-cors',
+      'detailed-logging'
+    ],
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// CORS test endpoint
+app.get('/cors-test', (req, res) => {
+  const origin = req.headers.origin;
+  console.log(`🧪 CORS TEST: Origin ${origin}`);
+  
+  res.json({
+    message: 'CORS test successful',
+    origin: origin,
+    timestamp: new Date().toISOString(),
+    headers: req.headers
   });
 });
 
@@ -257,6 +382,8 @@ app.get('/health', (req, res) => {
 app.get('/rooms/:roomId', (req, res) => {
   const { roomId } = req.params;
   const room = rooms.get(roomId);
+  
+  console.log(`📋 ROOM INFO REQUEST: ${roomId}`);
   
   if (!room) {
     return res.status(404).json({ error: 'Room not found' });
@@ -269,7 +396,8 @@ app.get('/rooms/:roomId', (req, res) => {
       userName: p.userName,
       mediaState: p.mediaState,
       joinedAt: p.joinedAt,
-      mediaInfo: p.mediaInfo
+      mediaInfo: p.mediaInfo,
+      origin: p.origin
     })),
     created: room.created,
     host: room.host
@@ -278,6 +406,8 @@ app.get('/rooms/:roomId', (req, res) => {
 
 // Get all rooms
 app.get('/rooms', (req, res) => {
+  console.log(`📋 ALL ROOMS REQUEST`);
+  
   const roomList = Array.from(rooms.entries()).map(([id, room]) => ({
     roomId: id,
     participants: room.participants.length,
@@ -295,23 +425,43 @@ app.get('/rooms', (req, res) => {
 
 // Connection test endpoint
 app.get('/test-connection', (req, res) => {
+  const origin = req.headers.origin;
+  const ip = req.ip || req.connection.remoteAddress;
+  
+  console.log(`🔧 CONNECTION TEST: Origin ${origin}, IP ${ip}`);
+  
   res.json({
     message: 'Server is reachable',
     timestamp: new Date().toISOString(),
+    origin: origin,
+    ip: ip,
     headers: req.headers,
-    ip: req.ip || req.connection.remoteAddress
+    success: true
   });
 });
 
-server.listen(port, () => {
-  console.log(`🛰️ Enhanced WebRTC Signaling Server running on Render`);
+// Add middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'no-origin'}`);
+  next();
+});
+
+server.listen(port, '0.0.0.0', () => {
+  console.log('🛰️ ========================================');
+  console.log('🛰️ ENHANCED WEBRTC SIGNALING SERVER');
+  console.log('🛰️ ========================================');
   console.log(`📡 Port: ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔒 Secure WebSocket: wss://biometricov4.onrender.com`);
+  console.log(`🔒 Server URL: https://biometricov4.onrender.com`);
+  console.log(`🌐 Allowed Origins:`);
+  console.log(`   - http://localhost:5173`);
+  console.log(`   - https://biometricov4-lunq.onrender.com`);
+  console.log(`   - *.onrender.com pattern`);
   console.log(`🎥 Features: WebRTC + Simple-Peer + Socket.IO Streaming`);
   console.log(`🔄 Auto-reconnection: Enabled`);
+  console.log(`📊 Enhanced Logging: Enabled`);
   console.log(`✅ Ready for production deployment`);
-  console.log(`🌐 CORS enabled for: biometricov4-lunq.onrender.com`);
+  console.log('🛰️ ========================================');
 });
 
 // Graceful shutdown
@@ -323,16 +473,20 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Enhanced cleanup
+// Enhanced cleanup with detailed logging
 setInterval(() => {
   const now = Date.now();
   const staleThreshold = 5 * 60 * 1000; // 5 minutes
   
+  let cleanedUsers = 0;
+  let cleanedRooms = 0;
+  
   // Clean up stale user states
   for (const [userId, userState] of userStates.entries()) {
     if (now - userState.lastHeartbeat > staleThreshold) {
-      console.log(`🧹 Cleaning up stale user state: ${userId}`);
+      console.log(`🧹 Cleaning up stale user state: ${userId} (${userState.userName})`);
       userStates.delete(userId);
+      cleanedUsers++;
     }
   }
   
@@ -341,6 +495,20 @@ setInterval(() => {
     if (room.participants.length === 0 && now - room.created.getTime() > 60 * 60 * 1000) {
       rooms.delete(roomId);
       console.log(`🧹 Cleaned up old empty room: ${roomId}`);
+      cleanedRooms++;
     }
   }
+  
+  if (cleanedUsers > 0 || cleanedRooms > 0) {
+    console.log(`🧹 Cleanup completed: ${cleanedUsers} users, ${cleanedRooms} rooms`);
+  }
 }, 2 * 60 * 1000); // Run every 2 minutes
+
+// Log server stats every 5 minutes
+setInterval(() => {
+  console.log('📊 SERVER STATS:');
+  console.log(`   Active connections: ${io.engine.clientsCount}`);
+  console.log(`   Total users: ${userStates.size}`);
+  console.log(`   Active rooms: ${rooms.size}`);
+  console.log(`   Uptime: ${Math.floor(process.uptime())} seconds`);
+}, 5 * 60 * 1000);
