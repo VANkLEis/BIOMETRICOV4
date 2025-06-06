@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Play, Clock, Wifi, Activity, Server, TestTube } from 'lucide-react';
 import ConnectionManager from '../utils/connectionManager.js';
+import CanvasRenderer from '../utils/canvasRenderer.js';
 import { getUserMedia, stopStream } from '../utils/mediaManager.js';
 
 interface WebRTCRoomProps {
@@ -12,7 +13,9 @@ interface WebRTCRoomProps {
 const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const debugContainerRef = useRef<HTMLDivElement>(null);
   const connectionManagerRef = useRef<ConnectionManager | null>(null);
+  const canvasRendererRef = useRef<CanvasRenderer | null>(null);
   
   // Estados principales
   const [connectionState, setConnectionState] = useState<string>('idle');
@@ -33,6 +36,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   // Estados de timing
   const [joinStartTime, setJoinStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+
+  // 🔧 ADDED: Estados para debugging de canvas
+  const [canvasDebugInfo, setCanvasDebugInfo] = useState<any>(null);
+  const [showCanvasDebug, setShowCanvasDebug] = useState(false);
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -107,6 +114,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     const connectionManager = new ConnectionManager();
     connectionManagerRef.current = connectionManager;
     
+    // Inicializar CanvasRenderer independiente para debugging
+    const canvasRenderer = new CanvasRenderer();
+    canvasRendererRef.current = canvasRenderer;
+    
     // Configurar callbacks
     connectionManager.setCallbacks({
       onStateChange: (newState: string, oldState: string, data: any) => {
@@ -153,6 +164,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     
     return () => {
       connectionManager.cleanup();
+      canvasRenderer.cleanup();
     };
   }, []);
 
@@ -220,6 +232,96 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setError(err);
       setConnectionState('connected'); // Volver al estado anterior
     }
+  };
+
+  // 🔧 ADDED: Test de canvas independiente
+  const handleCanvasTest = async () => {
+    if (!canvasRendererRef.current || !localStream) {
+      alert('❌ No local stream available for canvas test');
+      return;
+    }
+
+    try {
+      console.log('🧪 Starting independent canvas test...');
+      
+      // Crear contenedor de debug si no existe
+      if (!debugContainerRef.current) {
+        const container = document.createElement('div');
+        container.id = 'canvas-debug-container';
+        container.style.position = 'fixed';
+        container.style.top = '10px';
+        container.style.left = '10px';
+        container.style.zIndex = '9999';
+        container.style.backgroundColor = 'rgba(0,0,0,0.8)';
+        container.style.padding = '10px';
+        container.style.borderRadius = '5px';
+        document.body.appendChild(container);
+        debugContainerRef.current = container;
+      }
+
+      // Limpiar contenedor
+      debugContainerRef.current.innerHTML = '<h3 style="color: white; margin: 0 0 10px 0;">Canvas Debug Test</h3>';
+
+      // Test 1: Canvas de debug básico
+      const debugCanvas = canvasRendererRef.current.createDebugCanvas(debugContainerRef.current);
+      console.log('✅ Debug canvas created');
+
+      // Test 2: Inicializar canvas local
+      const localCanvasInfo = await canvasRendererRef.current.initializeLocalCanvas(
+        localStream, 
+        debugContainerRef.current
+      );
+      console.log('✅ Local canvas initialized:', localCanvasInfo);
+
+      // Test 3: Capturar frame y mostrarlo
+      setTimeout(async () => {
+        const frameData = canvasRendererRef.current!.captureLocalFrame();
+        if (frameData) {
+          console.log('✅ Frame captured, testing direct render...');
+          
+          try {
+            const testCanvas = await canvasRendererRef.current!.testDirectRender(
+              frameData, 
+              debugContainerRef.current!
+            );
+            console.log('✅ Direct render test successful');
+            
+            // Actualizar info de debug
+            const stats = canvasRendererRef.current!.getStats();
+            setCanvasDebugInfo(stats);
+            
+            alert('✅ Canvas test completed! Check the debug panel in the top-left corner.');
+          } catch (renderError) {
+            console.error('❌ Direct render test failed:', renderError);
+            alert('❌ Direct render test failed: ' + renderError.message);
+          }
+        } else {
+          console.error('❌ Failed to capture frame');
+          alert('❌ Failed to capture frame from local video');
+        }
+      }, 2000); // Wait 2 seconds for video to be ready
+
+      setShowCanvasDebug(true);
+
+    } catch (error) {
+      console.error('❌ Canvas test failed:', error);
+      alert('❌ Canvas test failed: ' + error.message);
+    }
+  };
+
+  // 🔧 ADDED: Limpiar debug de canvas
+  const handleCleanupCanvasDebug = () => {
+    if (debugContainerRef.current) {
+      document.body.removeChild(debugContainerRef.current);
+      debugContainerRef.current = null;
+    }
+    
+    if (canvasRendererRef.current) {
+      canvasRendererRef.current.cleanup();
+    }
+    
+    setShowCanvasDebug(false);
+    setCanvasDebugInfo(null);
   };
 
   // Toggle controles
@@ -292,6 +394,9 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
       setLocalStream(null);
     }
     
+    // Limpiar debug de canvas
+    handleCleanupCanvasDebug();
+    
     onEndCall();
   };
 
@@ -312,7 +417,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           );
           alert(`✅ Server reachable!\nFastest: ${fastest.server}\nResponse time: ${fastest.responseTime}ms`);
         } else {
-          alert('❌ No servers are reachable. Please check:\n1. Internet connection\n2. Server is running (npm run dev in server directory)\n3. Firewall settings');
+          alert('❌ No servers are reachable. Please check:\n1. Internet connection\n2. Server is running\n3. Firewall settings');
         }
       }
     } catch (error) {
@@ -484,6 +589,15 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <Activity className="h-4 w-4 mr-2" />
               Test Server
             </button>
+            {localStream && (
+              <button
+                onClick={handleCanvasTest}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg inline-flex items-center"
+              >
+                <TestTube className="h-4 w-4 mr-2" />
+                Test Canvas
+              </button>
+            )}
             <button
               onClick={handleEndCall}
               className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg"
@@ -602,13 +716,31 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         </div>
 
         {/* Debug Toggle */}
-        <div className="absolute top-16 left-4">
+        <div className="absolute top-16 left-4 space-y-2">
           <button
             onClick={() => setShowDebug(!showDebug)}
-            className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100"
+            className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100 block"
           >
             {showDebug ? 'Hide' : 'Show'} Debug
           </button>
+          
+          {localStream && (
+            <button
+              onClick={handleCanvasTest}
+              className="bg-purple-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100 block"
+            >
+              Test Canvas
+            </button>
+          )}
+          
+          {showCanvasDebug && (
+            <button
+              onClick={handleCleanupCanvasDebug}
+              className="bg-red-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100 block"
+            >
+              Clean Debug
+            </button>
+          )}
         </div>
 
         {/* Debug Info Panel */}
@@ -630,6 +762,15 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <div className="mt-2 pt-2 border-t border-gray-600">
                 <pre className="text-gray-300 text-xs whitespace-pre-wrap">
                   {JSON.stringify(connectionInfo, null, 2)}
+                </pre>
+              </div>
+            )}
+            
+            {canvasDebugInfo && (
+              <div className="mt-2 pt-2 border-t border-gray-600">
+                <h5 className="text-white font-semibold mb-1 text-xs">Canvas Debug:</h5>
+                <pre className="text-gray-300 text-xs whitespace-pre-wrap">
+                  {JSON.stringify(canvasDebugInfo, null, 2)}
                 </pre>
               </div>
             )}
@@ -697,6 +838,16 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         >
           <Activity className="h-6 w-6 text-white" />
         </button>
+
+        {localStream && (
+          <button
+            onClick={handleCanvasTest}
+            className="p-3 rounded-full bg-purple-600 hover:bg-purple-700 transition-colors"
+            title="Test canvas rendering"
+          >
+            <TestTube className="h-6 w-6 text-white" />
+          </button>
+        )}
 
         <button
           onClick={handleEndCall}
