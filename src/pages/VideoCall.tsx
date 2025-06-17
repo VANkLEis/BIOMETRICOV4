@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
 import { Copy, Check } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
-import WebRTCRoom from '../components/WebRTCRoom';
+import EnhancedWebRTCRoom from '../components/EnhancedWebRTCRoom';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
@@ -54,7 +54,7 @@ const VideoCall: React.FC = () => {
 
   return (
     <div className="h-screen bg-gray-900 overflow-hidden relative">
-      <WebRTCRoom 
+      <EnhancedWebRTCRoom 
         userName={user?.username || 'Anonymous'} 
         roomId={roomId}
         onEndCall={handleEndCall}
