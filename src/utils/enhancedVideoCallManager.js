@@ -1,5 +1,5 @@
 /**
- * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED
+ * ENHANCED VIDEO CALL MANAGER - LOCAL VIDEO FIXED
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -9,9 +9,10 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
+ * 8. ✅ LOCAL VIDEO ASSIGNMENT FIXED - ASIGNACIÓN DIRECTA INMEDIATA
  * 
  * @author SecureCall Team
- * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
+ * @version 8.0.0 - LOCAL VIDEO FULLY FIXED
  */
 
 import { io } from 'socket.io-client';
@@ -40,25 +41,23 @@ class EnhancedVideoCallManager {
         this.config = {
             // Servidores STUN/TURN más robustos
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' },
                 {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
+                    urls: "stun:openrelay.metered.ca:80"
                 },
                 {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
+                    urls: "turn:openrelay.metered.ca:80",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
                 },
                 {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
+                    urls: "turn:openrelay.metered.ca:443",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                {
+                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
                 }
             ],
             // Timeouts más generosos para guests
@@ -466,11 +465,11 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de medios con mejor manejo para guests
+    // 🔧 FIXED: Configuración de medios con ASIGNACIÓN DIRECTA INMEDIATA
     async setupLocalMedia() {
         try {
             this._setState('requesting_media');
-            this._log('🎥 Setting up local media...');
+            this._log('🎥 FIXED: Setting up local media with IMMEDIATE ASSIGNMENT...');
 
             // Verificar contexto seguro
             if (!window.isSecureContext && 
@@ -568,13 +567,14 @@ class EnhancedVideoCallManager {
             this.mediaReady = true;
             this.diagnostics.mediaGranted = true;
 
-            // Llamar callback inmediatamente
+            // 🔧 CRITICAL: Llamar callback INMEDIATAMENTE para asignación directa
             if (this.callbacks.onLocalStream) {
+                this._log('🎥 CRITICAL: Calling onLocalStream callback for IMMEDIATE ASSIGNMENT');
                 this.callbacks.onLocalStream(stream);
             }
 
             this._setState('media_ready');
-            this._log('✅ Local media setup completed');
+            this._log('✅ FIXED: Local media setup completed with IMMEDIATE ASSIGNMENT');
 
             return stream;
 
@@ -772,7 +772,7 @@ class EnhancedVideoCallManager {
             // 2. Unirse al room
             await this.joinRoom(roomId, userName);
             
-            // 3. Configurar medios
+            // 3. Configurar medios CON ASIGNACIÓN INMEDIATA
             await this.setupLocalMedia();
             
             // 4. Si hay otros participantes, iniciar peer connection

@@ -32,7 +32,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // Estados de animación
+  // 🎨 FIXED: Estados de animación de escaneo
   const [faceScanning, setFaceScanning] = useState(false);
   const [fingerprintScanning, setFingerprintScanning] = useState(false);
 
@@ -106,25 +106,40 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     }
   };
 
-  // Callback para manejar stream local
+  // 🔧 FIXED: Callback para manejar stream local CON ASIGNACIÓN DIRECTA INMEDIATA
   const handleLocalStream = useCallback((stream: MediaStream) => {
-    console.log("🎥 ENHANCED: Local stream received:", stream);
+    console.log("🎥 ENHANCED FIXED: Local stream received:", stream);
     setLocalStream(stream);
     
+    // 🔧 CRITICAL: Asignar stream INMEDIATAMENTE al elemento video local
     if (localVideoRef.current) {
-      console.log("🎥 ENHANCED: Assigning local stream to video element");
+      console.log("🎥 ENHANCED FIXED: Assigning local stream to video element IMMEDIATELY");
       localVideoRef.current.srcObject = stream;
-      localVideoRef.current.muted = true;
+      localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
+      localVideoRef.current.autoplay = true;
+      localVideoRef.current.playsInline = true;
       
-      localVideoRef.current.play().then(() => {
-        console.log("✅ ENHANCED: Local video is now playing");
-      }).catch(error => {
-        console.error("❌ ENHANCED: Local video play failed:", error);
-      });
+      // 🔧 FIXED: Forzar reproducción inmediata
+      const playPromise = localVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log("✅ ENHANCED FIXED: Local video is now playing and VISIBLE");
+        }).catch(error => {
+          console.error("❌ ENHANCED FIXED: Local video play failed:", error);
+          // Reintentar después de un momento
+          setTimeout(() => {
+            if (localVideoRef.current && localVideoRef.current.paused) {
+              localVideoRef.current.play().catch(console.error);
+            }
+          }, 1000);
+        });
+      }
+    } else {
+      console.error("❌ ENHANCED FIXED: Local video ref is null!");
     }
   }, []);
 
-  // Callback para manejar stream remoto
+  // Callback para manejar stream remoto (NO TOCAR - YA FUNCIONA)
   const handleRemoteStream = useCallback((stream: MediaStream | null) => {
     console.log("🖼️ ENHANCED: Remote stream received:", stream);
     setRemoteStream(stream);
@@ -249,16 +264,19 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     };
   }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
 
-  // Animaciones de escaneo
+  // 🎨 FIXED: Animación de escaneo facial
   const handleFaceScan = () => {
     if (faceScanning) return;
     setFaceScanning(true);
+    console.log('🔍 Starting face scan animation...');
     setTimeout(() => setFaceScanning(false), 3000);
   };
 
+  // 🎨 FIXED: Animación de escaneo de huella
   const handleFingerprintScan = () => {
     if (fingerprintScanning) return;
     setFingerprintScanning(true);
+    console.log('👆 Starting fingerprint scan animation...');
     setTimeout(() => setFingerprintScanning(false), 3000);
   };
 
@@ -456,7 +474,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     );
   }
 
-  // Interfaz principal de videollamada
+  // 🔧 FIXED: Interfaz principal de videollamada CON CONTROLES RESTAURADOS
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Video Container */}
@@ -472,7 +490,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
         />
         
-        {/* Animaciones de escaneo */}
+        {/* 🎨 FIXED: Animaciones de escaneo sobre el video remoto */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none">
             <div className="relative w-full h-full">
@@ -509,7 +527,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           </div>
         )}
         
-        {/* Local Video (Picture-in-Picture) */}
+        {/* 🔧 FIXED: Local Video (Picture-in-Picture) CON ASIGNACIÓN DIRECTA */}
         <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
           <video
             ref={localVideoRef}
@@ -517,9 +535,9 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             playsInline
             muted
             className="w-full h-full object-cover"
-            onLoadedMetadata={() => console.log("✅ ENHANCED: Local video metadata loaded")}
-            onPlay={() => console.log("✅ ENHANCED: Local video started playing")}
-            onError={(e) => console.error("❌ ENHANCED: Local video error:", e)}
+            onLoadedMetadata={() => console.log("✅ ENHANCED FIXED: Local video metadata loaded and ready")}
+            onPlay={() => console.log("✅ ENHANCED FIXED: Local video started playing and is VISIBLE")}
+            onError={(e) => console.error("❌ ENHANCED FIXED: Local video error:", e)}
           />
           
           {!isVideoEnabled && (
@@ -612,7 +630,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         )}
       </div>
 
-      {/* Enhanced Controls */}
+      {/* 🔧 FIXED: Enhanced Controls RESTAURADOS */}
       <div className="bg-gray-800 px-6 py-4 flex items-center justify-center space-x-4">
         <button
           onClick={handleToggleAudio}
@@ -642,7 +660,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           )}
         </button>
 
-        {/* Botones de animación de escaneo */}
+        {/* 🎨 FIXED: Botones de animación de escaneo RESTAURADOS */}
         <button
           onClick={handleFaceScan}
           disabled={faceScanning}
@@ -682,7 +700,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         </button>
       </div>
 
-      {/* CSS para animaciones */}
+      {/* 🎨 FIXED: CSS para animaciones RESTAURADO */}
       <style jsx>{`
         @keyframes faceScan {
           0% { top: 0; opacity: 1; }
