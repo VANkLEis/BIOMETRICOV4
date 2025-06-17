@@ -113,6 +113,82 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     }
   };
 
+  // 🔧 FIXED: Callback para manejar stream local
+  const handleLocalStream = useCallback((stream: MediaStream) => {
+    console.log("🎥 FIXED: Local stream received:", stream);
+    console.log("🎥 FIXED: Video tracks:", stream.getVideoTracks().length);
+    console.log("🎥 FIXED: Audio tracks:", stream.getAudioTracks().length);
+    
+    setLocalStream(stream);
+    
+    // 🔧 CRITICAL: Asignar stream al elemento video local INMEDIATAMENTE
+    if (localVideoRef.current) {
+      console.log("🎥 FIXED: Assigning local stream to video element");
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
+      
+      // 🔧 FIXED: Forzar reproducción
+      localVideoRef.current.play().then(() => {
+        console.log("✅ FIXED: Local video is now playing and visible");
+      }).catch(error => {
+        console.error("❌ FIXED: Local video play failed:", error);
+      });
+    } else {
+      console.error("❌ FIXED: Local video ref is null!");
+    }
+  }, []);
+
+  // 🔧 FIXED: Callback para manejar stream remoto
+  const handleRemoteStream = useCallback((stream: MediaStream | null) => {
+    console.log("🖼️ FIXED: Remote stream received:", stream);
+    
+    if (stream) {
+      console.log("🖼️ FIXED: Remote video tracks:", stream.getVideoTracks().length);
+      console.log("🖼️ FIXED: Remote audio tracks:", stream.getAudioTracks().length);
+      
+      setRemoteStream(stream);
+      
+      // 🔧 CRITICAL: Asignar stream al elemento video remoto INMEDIATAMENTE
+      if (remoteVideoRef.current) {
+        console.log("🖼️ FIXED: Assigning remote stream to video element");
+        remoteVideoRef.current.srcObject = stream;
+        
+        // 🔧 FIXED: Forzar reproducción con audio
+        remoteVideoRef.current.play().then(() => {
+          console.log("✅ FIXED: Remote video is now playing with audio");
+        }).catch(error => {
+          console.error("❌ FIXED: Remote video play failed:", error);
+        });
+      } else {
+        console.error("❌ FIXED: Remote video ref is null!");
+      }
+    } else {
+      setRemoteStream(null);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+    }
+  }, []);
+
+  // 🔧 FIXED: Callback para cambios de estado
+  const handleStateChange = useCallback((newState: string, oldState: string, data: any) => {
+    console.log(`🔄 FIXED: State change: ${oldState} → ${newState}`, data);
+    setConnectionState(newState);
+  }, []);
+
+  // 🔧 FIXED: Callback para cambios de participantes
+  const handleParticipantsChange = useCallback((newParticipants: string[]) => {
+    console.log("👥 FIXED: Participants changed:", newParticipants);
+    setParticipants(newParticipants);
+  }, []);
+
+  // 🔧 FIXED: Callback para errores
+  const handleError = useCallback((errorInfo: any) => {
+    console.error("❌ FIXED: Error received:", errorInfo);
+    setError(errorInfo);
+    setConnectionState('error');
+  }, []);
+
   // 🚀 INICIALIZACIÓN AUTOMÁTICA con VideoCallManager MEJORADA
   useEffect(() => {
     const initializeCall = async () => {
@@ -121,7 +197,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         setJoinStartTime(Date.now());
         setError(null);
 
-        console.log('🚀 GUEST FIXED: Initializing VideoCallManager...');
+        console.log('🚀 FIXED: Initializing VideoCallManager with DIRECT STREAM ASSIGNMENT...');
         
         // 🔧 FIXED: Verificar permisos primero para guests
         const hasPermissions = await checkCameraPermissions();
@@ -134,33 +210,34 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         const isHost = Math.random() > 0.5; // Para testing, alternar roles
         setIsGuest(!isHost);
         
-        console.log(`🎭 GUEST FIXED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
+        console.log(`🎭 FIXED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
-        // Inicializar VideoCallManager
-        const manager = await initializeVideoCall(roomId, userName, isHost);
+        // 🔧 CRITICAL: Configurar callbacks ANTES de inicializar
+        const callbacks = {
+          onLocalStream: handleLocalStream,
+          onRemoteStream: handleRemoteStream,
+          onStateChange: handleStateChange,
+          onParticipantsChange: handleParticipantsChange,
+          onError: handleError
+        };
+        
+        // Inicializar VideoCallManager con callbacks
+        const manager = await initializeVideoCall(roomId, userName, isHost, callbacks);
         videoCallManagerRef.current = manager;
         
         setConnectionState('connected');
-        console.log('✅ GUEST FIXED: VideoCallManager initialized successfully');
+        console.log('✅ FIXED: VideoCallManager initialized with DIRECT STREAM ASSIGNMENT');
         
         // Actualizar debug info periódicamente
         const debugInterval = setInterval(() => {
           const debug = getVideoDebugInfo();
           setDebugInfo(debug);
-          
-          // Actualizar streams basado en debug info
-          if (debug.hasLocalStream && !localStream) {
-            setLocalStream(manager.localStream);
-          }
-          if (debug.hasRemoteStream && !remoteStream) {
-            setRemoteStream(manager.remoteStream);
-          }
         }, 1000);
         
         return () => clearInterval(debugInterval);
         
       } catch (err: any) {
-        console.error('❌ GUEST FIXED: Failed to initialize VideoCallManager:', err);
+        console.error('❌ FIXED: Failed to initialize VideoCallManager:', err);
         
         // 🔧 FIXED: Manejo específico de errores para guests
         let errorMessage = err.message;
@@ -194,7 +271,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
         videoCallManagerRef.current = null;
       }
     };
-  }, [roomId, userName]);
+  }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
 
   // 🎨 ADDED: Animación de escaneo facial
   const handleFaceScan = () => {
@@ -271,7 +348,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
   const handleGetDebugInfo = () => {
     const debug = getVideoDebugInfo();
     setDebugInfo(debug);
-    console.log('📊 GUEST FIXED: Debug Info:', debug);
+    console.log('📊 FIXED: Debug Info:', debug);
   };
 
   // 🔧 ADDED: Función para solicitar permisos manualmente
@@ -475,12 +552,21 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
     <div className="flex flex-col h-full bg-gray-900">
       {/* Video Container */}
       <div className="flex-1 relative">
-        {/* Remote Video */}
+        {/* 🔧 CRITICAL: Remote Video - DIRECTO sin canvas */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
           className="w-full h-full object-cover bg-gray-800"
+          onLoadedMetadata={() => {
+            console.log("✅ FIXED: Remote video metadata loaded and ready");
+          }}
+          onPlay={() => {
+            console.log("✅ FIXED: Remote video started playing");
+          }}
+          onError={(e) => {
+            console.error("❌ FIXED: Remote video error:", e);
+          }}
         />
         
         {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
@@ -526,7 +612,7 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
           </div>
         )}
         
-        {/* Local Video (Picture-in-Picture) */}
+        {/* 🔧 CRITICAL: Local Video (Picture-in-Picture) - DIRECTO sin canvas */}
         <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
           <video
             ref={localVideoRef}
@@ -534,6 +620,15 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
             playsInline
             muted
             className="w-full h-full object-cover"
+            onLoadedMetadata={() => {
+              console.log("✅ FIXED: Local video metadata loaded and ready");
+            }}
+            onPlay={() => {
+              console.log("✅ FIXED: Local video started playing");
+            }}
+            onError={(e) => {
+              console.error("❌ FIXED: Local video error:", e);
+            }}
           />
           
           {!isVideoEnabled && (
@@ -597,16 +692,10 @@ const WebRTCRoom: React.FC<WebRTCRoomProps> = ({ userName, roomId, onEndCall }) 
               <p>Permission: {permissionState}</p>
               <p>Local Stream: {debugInfo.hasLocalStream ? '✅' : '❌'}</p>
               <p>Remote Stream: {debugInfo.hasRemoteStream ? '✅' : '❌'}</p>
-              <p>Local Canvas: {debugInfo.videoRendererStats?.hasLocalCanvas ? '✅' : '❌'}</p>
-              <p>Remote Canvas: {debugInfo.videoRendererStats?.hasRemoteCanvas ? '✅' : '❌'}</p>
-              <p>Local Video Ready: {debugInfo.videoRendererStats?.localVideoReady ? '✅' : '❌'}</p>
-              <p>Remote Video Ready: {debugInfo.videoRendererStats?.remoteVideoReady ? '✅' : '❌'}</p>
-              <p>Frame Count: {debugInfo.frameCount || 0}</p>
-              <p>Streaming Active: {debugInfo.streamingActive ? '✅' : '❌'}</p>
+              <p>Local Video Element: {localVideoRef.current?.srcObject ? '✅' : '❌'}</p>
+              <p>Remote Video Element: {remoteVideoRef.current?.srcObject ? '✅' : '❌'}</p>
               <p>Peer State: {debugInfo.peerConnectionState || 'none'}</p>
               <p>ICE State: {debugInfo.iceConnectionState || 'none'}</p>
-              <p>Init State: {debugInfo.initializationState || 'unknown'}</p>
-              <p>Media State: {debugInfo.mediaRequestState || 'unknown'}</p>
             </div>
           </div>
         )}

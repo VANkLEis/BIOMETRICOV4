@@ -6,12 +6,13 @@
  * 2. ✅ HOST se conecta pero GUEST falla en media access
  * 3. ✅ Mejor manejo de errores específicos para cada caso
  * 4. ✅ Configuración robusta de STUN/TURN servers
- * 5. ✅ Video local AUTOMÁTICO sin repair
- * 6. ✅ Video remoto VISIBLE con audio
- * 7. ✅ Manejo completo de estados y reconexión
+ * 5. ✅ Video local DIRECTO a elemento <video>
+ * 6. ✅ Video remoto DIRECTO a elemento <video>
+ * 7. ✅ Audio remoto AUTOMÁTICO
+ * 8. ✅ Callbacks para asignación inmediata de streams
  * 
  * @author SecureCall Team
- * @version 5.0.0 - GUEST CAMERA FIXED
+ * @version 6.0.0 - DIRECT VIDEO ASSIGNMENT FIXED
  */
 
 class VideoCallManager {
@@ -24,16 +25,14 @@ class VideoCallManager {
         this.roomId = null;
         this.userName = null;
         
-        // Canvas y contextos
-        this.localCanvas = null;
-        this.remoteCanvas = null;
-        this.localCtx = null;
-        this.remoteCtx = null;
-        
-        // Videos para renderizado
-        this.localVideo = null;
-        this.remoteVideo = null;
-        this.remoteAudio = null;
+        // 🔧 CRITICAL: Callbacks para asignación directa de streams
+        this.callbacks = {
+            onLocalStream: null,
+            onRemoteStream: null,
+            onStateChange: null,
+            onParticipantsChange: null,
+            onError: null
+        };
         
         // Stats para debug
         this.stats = {
@@ -62,8 +61,6 @@ class VideoCallManager {
         // 🔧 ADDED: Estados de inicialización
         this.initializationState = 'idle';
         this.mediaRequestState = 'idle';
-        
-        this.initializeCanvas();
     }
 
     _log(message, level = 'info') {
@@ -73,62 +70,13 @@ class VideoCallManager {
         }
     }
 
-    // 1. INICIALIZAR CANVAS CORRECTAMENTE
-    initializeCanvas() {
-        try {
-            // Obtener canvas existentes o crearlos
-            this.localCanvas = document.getElementById('localCanvas');
-            this.remoteCanvas = document.getElementById('remoteCanvas');
-            
-            if (!this.localCanvas) {
-                this._log('Creating local canvas...');
-                this.localCanvas = document.createElement('canvas');
-                this.localCanvas.id = 'localCanvas';
-                this.localCanvas.style.display = 'none';
-                document.body.appendChild(this.localCanvas);
-            }
-            
-            if (!this.remoteCanvas) {
-                this._log('Creating remote canvas...');
-                this.remoteCanvas = document.createElement('canvas');
-                this.remoteCanvas.id = 'remoteCanvas';
-                this.remoteCanvas.style.display = 'none';
-                document.body.appendChild(this.remoteCanvas);
-            }
-            
-            // Configurar contextos
-            this.localCtx = this.localCanvas.getContext('2d');
-            this.remoteCtx = this.remoteCanvas.getContext('2d');
-            
-            // Establecer dimensiones
-            this.localCanvas.width = 640;
-            this.localCanvas.height = 480;
-            this.remoteCanvas.width = 640;
-            this.remoteCanvas.height = 480;
-            
-            // Actualizar stats
-            this.stats.hasLocalCanvas = true;
-            this.stats.hasRemoteCanvas = true;
-            
-            // Actualizar stats globales
-            if (!window.videoStats) {
-                window.videoStats = {};
-            }
-            window.videoStats = {
-                ...window.videoStats,
-                hasLocalCanvas: true,
-                hasRemoteCanvas: true
-            };
-            
-            this._log('✅ Canvas initialized successfully');
-            return true;
-        } catch (error) {
-            this._log(`❌ Error initializing canvas: ${error.message}`, 'error');
-            return false;
-        }
+    // 🔧 CRITICAL: Configurar callbacks para asignación directa
+    setCallbacks(callbacks) {
+        this.callbacks = { ...this.callbacks, ...callbacks };
+        this._log('✅ CRITICAL: Callbacks configured for direct stream assignment');
     }
 
-    // 2. 🔧 FIXED: CONFIGURAR PEER CONNECTION CON NUEVOS STUN/TURN SERVERS
+    // 🔧 FIXED: CONFIGURAR PEER CONNECTION CON NUEVOS STUN/TURN SERVERS
     createPeerConnection() {
         const configuration = {
             iceServers: [
@@ -162,6 +110,10 @@ class VideoCallManager {
             const state = this.peerConnection.connectionState;
             this._log(`🔗 Peer connection state: ${state}`);
             
+            if (this.callbacks.onStateChange) {
+                this.callbacks.onStateChange(`peer_${state}`, 'peer_connection', { peerState: state });
+            }
+            
             if (state === 'failed') {
                 this._log('Connection failed, attempting to restart...', 'warn');
                 this.restartConnection();
@@ -191,20 +143,28 @@ class VideoCallManager {
             }
         };
 
-        // Manejar stream remoto
+        // 🔧 CRITICAL: Manejar stream remoto con callback INMEDIATO
         this.peerConnection.ontrack = (event) => {
-            this._log('📹 Remote track received');
-            this.remoteStream = event.streams[0];
-            this.setupRemoteVideo(this.remoteStream);
+            this._log('📹 CRITICAL: Remote track received');
+            const [remoteStream] = event.streams;
+            this.remoteStream = remoteStream;
+            
+            // 🔧 CRITICAL: Llamar callback INMEDIATAMENTE para asignación directa
+            if (this.callbacks.onRemoteStream) {
+                this._log('📹 CRITICAL: Calling onRemoteStream callback for DIRECT assignment');
+                this.callbacks.onRemoteStream(remoteStream);
+            }
+            
+            this.stats.remoteVideoReady = true;
         };
 
         return this.peerConnection;
     }
 
-    // 3. 🔧 FIXED: CONFIGURAR VIDEO LOCAL CON MEJOR MANEJO DE PERMISOS
+    // 🔧 FIXED: CONFIGURAR VIDEO LOCAL CON MEJOR MANEJO DE PERMISOS
     async setupLocalVideo() {
         try {
-            this._log('🎥 GUEST FIXED: Setting up local video with enhanced permissions...');
+            this._log('🎥 CRITICAL: Setting up local video with DIRECT assignment...');
             this.mediaRequestState = 'requesting';
             
             // 🔧 FIXED: Verificar contexto seguro primero
@@ -221,13 +181,13 @@ class VideoCallManager {
             // 🔧 FIXED: Verificar permisos de forma más robusta
             try {
                 const permissions = await navigator.permissions.query({name: 'camera'});
-                this._log(`GUEST FIXED: Camera permission status: ${permissions.state}`);
+                this._log(`CRITICAL: Camera permission status: ${permissions.state}`);
                 
                 if (permissions.state === 'denied') {
                     throw new Error('Camera access is denied. Please enable camera permissions in your browser settings and refresh the page.');
                 }
             } catch (permError) {
-                this._log('GUEST FIXED: Cannot check permissions directly, proceeding with getUserMedia...', 'warn');
+                this._log('CRITICAL: Cannot check permissions directly, proceeding with getUserMedia...', 'warn');
             }
 
             // 🔧 FIXED: Configuración de constraints más permisiva para guests
@@ -246,15 +206,15 @@ class VideoCallManager {
                 }
             };
 
-            this._log('GUEST FIXED: Requesting media with enhanced constraints...');
+            this._log('CRITICAL: Requesting media with enhanced constraints...');
             
             // 🔧 FIXED: Intentar con constraints completas primero
             let stream;
             try {
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
-                this._log('✅ GUEST FIXED: Full media stream obtained');
+                this._log('✅ CRITICAL: Full media stream obtained');
             } catch (fullError) {
-                this._log(`GUEST FIXED: Full constraints failed: ${fullError.message}`, 'warn');
+                this._log(`CRITICAL: Full constraints failed: ${fullError.message}`, 'warn');
                 
                 // 🔧 FIXED: Fallback a constraints básicas
                 try {
@@ -263,9 +223,9 @@ class VideoCallManager {
                         audio: true
                     };
                     stream = await navigator.mediaDevices.getUserMedia(basicConstraints);
-                    this._log('✅ GUEST FIXED: Basic media stream obtained as fallback');
+                    this._log('✅ CRITICAL: Basic media stream obtained as fallback');
                 } catch (basicError) {
-                    this._log(`❌ GUEST FIXED: Basic constraints also failed: ${basicError.message}`, 'error');
+                    this._log(`❌ CRITICAL: Basic constraints also failed: ${basicError.message}`, 'error');
                     throw basicError;
                 }
             }
@@ -276,65 +236,34 @@ class VideoCallManager {
             // 🔧 FIXED: Log detalles del stream obtenido
             const videoTracks = stream.getVideoTracks();
             const audioTracks = stream.getAudioTracks();
-            this._log(`GUEST FIXED: Stream details - Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
+            this._log(`CRITICAL: Stream details - Video tracks: ${videoTracks.length}, Audio tracks: ${audioTracks.length}`);
             
             if (videoTracks.length > 0) {
                 const videoSettings = videoTracks[0].getSettings();
-                this._log(`GUEST FIXED: Video settings: ${videoSettings.width}x${videoSettings.height}@${videoSettings.frameRate}fps`);
+                this._log(`CRITICAL: Video settings: ${videoSettings.width}x${videoSettings.height}@${videoSettings.frameRate}fps`);
             }
 
-            // 🔧 FIXED: Crear video element con configuración robusta
-            this.localVideo = document.createElement('video');
-            this.localVideo.srcObject = stream;
-            this.localVideo.autoplay = true;
-            this.localVideo.muted = true; // CRÍTICO: evitar feedback
-            this.localVideo.playsInline = true;
-            this.localVideo.controls = false;
-            this.localVideo.style.display = 'none';
-            document.body.appendChild(this.localVideo);
-
-            // 🔧 FIXED: Promesa para esperar que el video esté listo
-            await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    reject(new Error('Video metadata load timeout'));
-                }, 10000);
-
-                this.localVideo.onloadedmetadata = () => {
-                    clearTimeout(timeout);
-                    this._log('✅ GUEST FIXED: Local video metadata loaded');
-                    this.stats.localVideoReady = true;
-                    if (window.videoStats) {
-                        window.videoStats.localVideoReady = true;
-                    }
-                    resolve(null);
-                };
-
-                this.localVideo.onerror = (error) => {
-                    clearTimeout(timeout);
-                    reject(new Error(`Video element error: ${error}`));
-                };
-
-                // 🔧 FIXED: Forzar carga de metadata
-                this.localVideo.load();
-            });
-
-            // 🔧 FIXED: Iniciar renderizado automático
-            this.startLocalVideoRender();
+            // 🔧 CRITICAL: Llamar callback INMEDIATAMENTE para asignación directa
+            if (this.callbacks.onLocalStream) {
+                this._log('🎥 CRITICAL: Calling onLocalStream callback for DIRECT assignment');
+                this.callbacks.onLocalStream(stream);
+            }
 
             // 🔧 FIXED: Agregar tracks al peer connection si existe
             if (this.peerConnection) {
                 stream.getTracks().forEach(track => {
-                    this._log(`➕ GUEST FIXED: Adding ${track.kind} track to peer connection`);
+                    this._log(`➕ CRITICAL: Adding ${track.kind} track to peer connection`);
                     this.peerConnection.addTrack(track, stream);
                 });
             }
 
-            this._log('✅ GUEST FIXED: Local video setup completed successfully');
+            this.stats.localVideoReady = true;
+            this._log('✅ CRITICAL: Local video setup completed with DIRECT assignment');
             return stream;
 
         } catch (error) {
             this.mediaRequestState = 'denied';
-            this._log(`❌ GUEST FIXED: Error accessing camera/microphone: ${error.message}`, 'error');
+            this._log(`❌ CRITICAL: Error accessing camera/microphone: ${error.message}`, 'error');
             
             // 🔧 FIXED: Mensajes de error más específicos y útiles
             let userFriendlyMessage;
@@ -356,139 +285,21 @@ class VideoCallManager {
             const enhancedError = new Error(userFriendlyMessage);
             enhancedError.originalError = error;
             enhancedError.name = error.name;
+            
+            // 🔧 CRITICAL: Llamar callback de error
+            if (this.callbacks.onError) {
+                this.callbacks.onError({
+                    message: userFriendlyMessage,
+                    originalError: error,
+                    context: 'setupLocalVideo'
+                });
+            }
+            
             throw enhancedError;
         }
     }
 
-    // 4. RENDERIZAR VIDEO LOCAL AUTOMÁTICAMENTE
-    startLocalVideoRender() {
-        const renderFrame = () => {
-            if (this.localVideo && this.localVideo.readyState >= this.localVideo.HAVE_CURRENT_DATA && this.localCtx) {
-                try {
-                    // Dibujar frame en canvas
-                    this.localCtx.drawImage(
-                        this.localVideo, 
-                        0, 0, 
-                        this.localCanvas.width, 
-                        this.localCanvas.height
-                    );
-                    
-                    // Actualizar stats
-                    this.stats.localFrames++;
-                    this.stats.lastLocalRender = Date.now();
-                    this.stats.isLocalRendering = true;
-                    
-                    // Actualizar stats globales
-                    if (window.videoStats) {
-                        window.videoStats.localFrames = this.stats.localFrames;
-                        window.videoStats.lastLocalRender = this.stats.lastLocalRender;
-                        window.videoStats.isLocalRendering = true;
-                    }
-                } catch (renderError) {
-                    // Silenciar errores menores de renderizado
-                }
-            }
-            
-            requestAnimationFrame(renderFrame);
-        };
-        
-        renderFrame();
-        this._log('✅ Local video rendering started');
-    }
-
-    // 5. CONFIGURAR VIDEO REMOTO CON AUDIO
-    setupRemoteVideo(stream) {
-        this._log('🖼️ Setting up remote video with audio...');
-        
-        // Crear video element oculto para stream remoto
-        this.remoteVideo = document.createElement('video');
-        this.remoteVideo.srcObject = stream;
-        this.remoteVideo.autoplay = true;
-        this.remoteVideo.playsInline = true;
-        this.remoteVideo.style.display = 'none';
-        document.body.appendChild(this.remoteVideo);
-
-        this.remoteVideo.onloadedmetadata = () => {
-            this._log('✅ Remote video metadata loaded');
-            this.stats.remoteVideoReady = true;
-            if (window.videoStats) {
-                window.videoStats.remoteVideoReady = true;
-            }
-            this.startRemoteVideoRender();
-        };
-
-        // Configurar audio remoto separado
-        this.setupRemoteAudio(stream);
-    }
-
-    // 6. CONFIGURAR AUDIO REMOTO SEPARADO
-    setupRemoteAudio(stream) {
-        try {
-            this._log('🔊 Setting up remote audio...');
-            
-            // Crear elemento audio separado para audio remoto
-            this.remoteAudio = document.createElement('audio');
-            this.remoteAudio.srcObject = stream;
-            this.remoteAudio.autoplay = true;
-            this.remoteAudio.playsInline = true;
-            this.remoteAudio.volume = 1.0;
-            this.remoteAudio.style.display = 'none';
-            document.body.appendChild(this.remoteAudio);
-
-            // Forzar reproducción de audio
-            const playPromise = this.remoteAudio.play();
-            if (playPromise !== undefined) {
-                playPromise
-                    .then(() => {
-                        this._log('✅ Remote audio is playing');
-                    })
-                    .catch(error => {
-                        this._log(`❌ Remote audio play failed: ${error.message}`, 'error');
-                    });
-            }
-
-        } catch (error) {
-            this._log(`❌ Error setting up remote audio: ${error.message}`, 'error');
-        }
-    }
-
-    // 7. RENDERIZAR VIDEO REMOTO
-    startRemoteVideoRender() {
-        const renderFrame = () => {
-            if (this.remoteVideo && this.remoteVideo.readyState >= this.remoteVideo.HAVE_CURRENT_DATA && this.remoteCtx) {
-                try {
-                    // Dibujar frame en canvas
-                    this.remoteCtx.drawImage(
-                        this.remoteVideo, 
-                        0, 0, 
-                        this.remoteCanvas.width, 
-                        this.remoteCanvas.height
-                    );
-                    
-                    // Actualizar stats
-                    this.stats.remoteFrames++;
-                    this.stats.lastRemoteRender = Date.now();
-                    this.stats.isRemoteRendering = true;
-                    
-                    // Actualizar stats globales
-                    if (window.videoStats) {
-                        window.videoStats.remoteFrames = this.stats.remoteFrames;
-                        window.videoStats.lastRemoteRender = this.stats.lastRemoteRender;
-                        window.videoStats.isRemoteRendering = true;
-                    }
-                } catch (renderError) {
-                    // Silenciar errores menores de renderizado
-                }
-            }
-            
-            requestAnimationFrame(renderFrame);
-        };
-        
-        renderFrame();
-        this._log('✅ Remote video rendering started');
-    }
-
-    // 8. 🔧 FIXED: CONECTAR AL SERVIDOR DE SEÑALIZACIÓN CON MEJOR MANEJO DE ERRORES
+    // 🔧 FIXED: CONECTAR AL SERVIDOR DE SEÑALIZACIÓN CON MEJOR MANEJO DE ERRORES
     async connectToSignaling() {
         return new Promise((resolve, reject) => {
             const isLocalhost = window.location.hostname === 'localhost' || 
@@ -499,7 +310,7 @@ class VideoCallManager {
                 this.serverConfig.development : 
                 this.serverConfig.production;
 
-            this._log(`🔗 GUEST FIXED: Connecting to signaling server: ${serverUrl}`);
+            this._log(`🔗 CRITICAL: Connecting to signaling server: ${serverUrl}`);
 
             // 🔧 FIXED: Mejor manejo de importación de Socket.IO
             import('socket.io-client').then(({ io }) => {
@@ -525,20 +336,20 @@ class VideoCallManager {
                 });
 
                 const timeout = setTimeout(() => {
-                    this._log('❌ GUEST FIXED: Connection timeout to signaling server', 'error');
+                    this._log('❌ CRITICAL: Connection timeout to signaling server', 'error');
                     reject(new Error('Connection timeout to signaling server. The server may be starting up or unreachable. Please wait a moment and try again.'));
                 }, 15000);
 
                 this.socket.on('connect', () => {
                     clearTimeout(timeout);
-                    this._log('✅ GUEST FIXED: Connected to signaling server successfully');
+                    this._log('✅ CRITICAL: Connected to signaling server successfully');
                     this.setupSocketEvents();
                     resolve();
                 });
 
                 this.socket.on('connect_error', (error) => {
                     clearTimeout(timeout);
-                    this._log(`❌ GUEST FIXED: Connection error: ${error.message}`, 'error');
+                    this._log(`❌ CRITICAL: Connection error: ${error.message}`, 'error');
                     
                     // 🔧 ADDED: Mensajes de error más específicos
                     let errorMessage = 'Failed to connect to signaling server. ';
@@ -558,26 +369,30 @@ class VideoCallManager {
 
                 // 🔧 ADDED: Manejo de desconexión
                 this.socket.on('disconnect', (reason) => {
-                    this._log(`🔌 GUEST FIXED: Disconnected from signaling server: ${reason}`, 'warn');
+                    this._log(`🔌 CRITICAL: Disconnected from signaling server: ${reason}`, 'warn');
                 });
 
                 // 🔧 ADDED: Confirmación de conexión del servidor
                 this.socket.on('connection-confirmed', (data) => {
-                    this._log(`✅ GUEST FIXED: Connection confirmed by server: ${data.message}`);
+                    this._log(`✅ CRITICAL: Connection confirmed by server: ${data.message}`);
                 });
 
             }).catch(error => {
-                this._log(`❌ GUEST FIXED: Failed to load Socket.IO: ${error.message}`, 'error');
+                this._log(`❌ CRITICAL: Failed to load Socket.IO: ${error.message}`, 'error');
                 reject(new Error('Failed to load Socket.IO library: ' + error.message));
             });
         });
     }
 
-    // 9. CONFIGURAR EVENTOS DE SOCKET
+    // 🔧 CONFIGURAR EVENTOS DE SOCKET
     setupSocketEvents() {
         // Manejar usuarios que se unen
         this.socket.on('user-joined', (data) => {
             this._log(`👤 User joined: ${JSON.stringify(data)}`);
+            
+            if (this.callbacks.onParticipantsChange) {
+                this.callbacks.onParticipantsChange(data.participants || []);
+            }
             
             // Si hay otros participantes y tenemos stream local, iniciar conexión
             if (data.participants && data.participants.length > 1 && this.localStream) {
@@ -622,7 +437,7 @@ class VideoCallManager {
         });
     }
 
-    // 10. CREAR Y ENVIAR OFFER (HOST)
+    // 🔧 CREAR Y ENVIAR OFFER (HOST)
     async createOffer() {
         try {
             this._log('📤 Creating offer...');
@@ -644,7 +459,7 @@ class VideoCallManager {
         }
     }
 
-    // 11. MANEJAR OFFER Y CREAR ANSWER (INVITADO)
+    // 🔧 MANEJAR OFFER Y CREAR ANSWER (INVITADO)
     async handleOffer(offer) {
         try {
             await this.peerConnection.setRemoteDescription(offer);
@@ -663,7 +478,7 @@ class VideoCallManager {
         }
     }
 
-    // 12. MANEJAR ANSWER (HOST)
+    // 🔧 MANEJAR ANSWER (HOST)
     async handleAnswer(answer) {
         try {
             await this.peerConnection.setRemoteDescription(answer);
@@ -673,7 +488,7 @@ class VideoCallManager {
         }
     }
 
-    // 13. REINICIAR CONEXIÓN EN CASO DE FALLO
+    // 🔧 REINICIAR CONEXIÓN EN CASO DE FALLO
     async restartConnection() {
         this._log('🔄 Restarting connection...');
         
@@ -703,17 +518,8 @@ class VideoCallManager {
         }
     }
 
-    // 14. FUNCIÓN DEBUG MEJORADA
+    // 🔧 FUNCIÓN DEBUG MEJORADA
     getDebugInfo() {
-        // Actualizar stats globales
-        if (!window.videoStats) {
-            window.videoStats = {};
-        }
-        window.videoStats = {
-            ...window.videoStats,
-            ...this.stats
-        };
-
         return {
             hasLocalStream: !!this.localStream,
             hasRemoteStream: !!this.remoteStream,
@@ -731,24 +537,28 @@ class VideoCallManager {
             initializationState: this.initializationState,
             mediaRequestState: this.mediaRequestState,
             connectionAttempts: this.connectionAttempts,
-            canvasInfo: {
-                localCanvasExists: !!this.localCanvas,
-                remoteCanvasExists: !!this.remoteCanvas,
-                localCanvasInDOM: this.localCanvas ? document.contains(this.localCanvas) : false,
-                remoteCanvasInDOM: this.remoteCanvas ? document.contains(this.remoteCanvas) : false
+            callbacksConfigured: {
+                onLocalStream: !!this.callbacks.onLocalStream,
+                onRemoteStream: !!this.callbacks.onRemoteStream,
+                onStateChange: !!this.callbacks.onStateChange,
+                onParticipantsChange: !!this.callbacks.onParticipantsChange,
+                onError: !!this.callbacks.onError
             }
         };
     }
 
-    // 15. 🔧 FIXED: INICIALIZACIÓN COMPLETA CON MEJOR MANEJO DE ERRORES
-    async initialize(roomId, userName, isHost) {
+    // 🔧 FIXED: INICIALIZACIÓN COMPLETA CON CALLBACKS
+    async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
-            this._log(`🚀 GUEST FIXED: Initializing video call as ${isHost ? 'HOST' : 'GUEST'}`);
+            this._log(`🚀 CRITICAL: Initializing video call as ${isHost ? 'HOST' : 'GUEST'} with DIRECT stream assignment`);
             this.initializationState = 'initializing';
             
             this.roomId = roomId;
             this.userName = userName;
             this.isHost = isHost;
+            
+            // 🔧 CRITICAL: Configurar callbacks PRIMERO
+            this.setCallbacks(callbacks);
             
             // 1. Conectar al servidor de señalización
             this.initializationState = 'connecting_signaling';
@@ -767,16 +577,18 @@ class VideoCallManager {
             await this.setupLocalVideo();
             
             this.initializationState = 'ready';
-            this._log('✅ GUEST FIXED: Video call initialized successfully');
+            this._log('✅ CRITICAL: Video call initialized with DIRECT stream assignment');
+            
+            return this;
             
         } catch (error) {
             this.initializationState = 'error';
-            this._log(`❌ GUEST FIXED: Failed to initialize video call: ${error.message}`, 'error');
+            this._log(`❌ CRITICAL: Failed to initialize video call: ${error.message}`, 'error');
             throw error;
         }
     }
 
-    // 16. UNIRSE AL ROOM
+    // 🔧 UNIRSE AL ROOM
     async joinRoom(roomId, userName) {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -801,7 +613,7 @@ class VideoCallManager {
         });
     }
 
-    // 17. TOGGLE CONTROLES
+    // 🔧 TOGGLE CONTROLES
     toggleVideo() {
         if (this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
@@ -826,7 +638,7 @@ class VideoCallManager {
         return false;
     }
 
-    // 18. LIMPIEZA COMPLETA
+    // 🔧 LIMPIEZA COMPLETA
     cleanup() {
         this._log('🧹 Cleaning up VideoCallManager...');
 
@@ -848,31 +660,7 @@ class VideoCallManager {
             this.socket = null;
         }
 
-        // Limpiar elementos DOM
-        if (this.localVideo && this.localVideo.parentNode) {
-            this.localVideo.parentNode.removeChild(this.localVideo);
-        }
-        if (this.remoteVideo && this.remoteVideo.parentNode) {
-            this.remoteVideo.parentNode.removeChild(this.remoteVideo);
-        }
-        if (this.remoteAudio && this.remoteAudio.parentNode) {
-            this.remoteAudio.parentNode.removeChild(this.remoteAudio);
-        }
-        if (this.localCanvas && this.localCanvas.parentNode) {
-            this.localCanvas.parentNode.removeChild(this.localCanvas);
-        }
-        if (this.remoteCanvas && this.remoteCanvas.parentNode) {
-            this.remoteCanvas.parentNode.removeChild(this.remoteCanvas);
-        }
-
         // Reset variables
-        this.localVideo = null;
-        this.remoteVideo = null;
-        this.remoteAudio = null;
-        this.localCanvas = null;
-        this.remoteCanvas = null;
-        this.localCtx = null;
-        this.remoteCtx = null;
         this.remoteStream = null;
 
         // Reset estados
@@ -894,9 +682,6 @@ class VideoCallManager {
             remoteVideoReady: false
         };
 
-        // Reset stats globales
-        window.videoStats = { ...this.stats };
-
         this._log('✅ Cleanup completed');
     }
 }
@@ -904,10 +689,10 @@ class VideoCallManager {
 // Instancia global
 let videoCallManager = null;
 
-// Función para inicializar desde el código existente
-export async function initializeVideoCall(roomId, userName, isHost) {
+// 🔧 CRITICAL: Función para inicializar con callbacks
+export async function initializeVideoCall(roomId, userName, isHost, callbacks = {}) {
     try {
-        console.log('🚀 GUEST FIXED: Starting VideoCallManager initialization...');
+        console.log('🚀 CRITICAL: Starting VideoCallManager with DIRECT stream assignment...');
         
         // Limpiar instancia anterior si existe
         if (videoCallManager) {
@@ -915,17 +700,17 @@ export async function initializeVideoCall(roomId, userName, isHost) {
         }
         
         videoCallManager = new VideoCallManager();
-        await videoCallManager.initialize(roomId, userName, isHost);
+        await videoCallManager.initialize(roomId, userName, isHost, callbacks);
         
         // Debug inicial
         setTimeout(() => {
-            console.log('📊 GUEST FIXED: Initial debug:', videoCallManager.getDebugInfo());
+            console.log('📊 CRITICAL: Initial debug:', videoCallManager.getDebugInfo());
         }, 3000);
         
         return videoCallManager;
         
     } catch (error) {
-        console.error('❌ GUEST FIXED: Failed to start video call:', error);
+        console.error('❌ CRITICAL: Failed to start video call:', error);
         throw error;
     }
 }
@@ -934,14 +719,21 @@ export async function initializeVideoCall(roomId, userName, isHost) {
 export function getVideoDebugInfo() {
     return videoCallManager ? videoCallManager.getDebugInfo() : { 
         error: 'VideoCallManager not initialized',
-        hasLocalCanvas: false,
-        hasRemoteCanvas: false,
+        hasLocalStream: false,
+        hasRemoteStream: false,
         localVideoReady: false,
         remoteVideoReady: false,
         frameCount: 0,
         streamingActive: false,
         initializationState: 'not_initialized',
-        mediaRequestState: 'not_initialized'
+        mediaRequestState: 'not_initialized',
+        callbacksConfigured: {
+            onLocalStream: false,
+            onRemoteStream: false,
+            onStateChange: false,
+            onParticipantsChange: false,
+            onError: false
+        }
     };
 }
 
