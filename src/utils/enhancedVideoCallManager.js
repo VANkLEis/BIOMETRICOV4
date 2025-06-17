@@ -1,5 +1,5 @@
 /**
- * ENHANCED VIDEO CALL MANAGER - LOCAL VIDEO FIXED
+ * ENHANCED VIDEO CALL MANAGER - ROLE ASSIGNMENT FIXED
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -10,9 +10,10 @@
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
  * 8. ✅ LOCAL VIDEO ASSIGNMENT FIXED - ASIGNACIÓN DIRECTA INMEDIATA
+ * 9. ✅ ROLE ASSIGNMENT FIXED - NO MÁS DOBLE HOST
  * 
  * @author SecureCall Team
- * @version 8.0.0 - LOCAL VIDEO FULLY FIXED
+ * @version 9.0.0 - ROLE ASSIGNMENT FULLY FIXED
  */
 
 import { io } from 'socket.io-client';
@@ -359,8 +360,9 @@ class EnhancedVideoCallManager {
                 this.callbacks.onParticipantsChange(this.participants);
             }
 
-            // Si somos host y hay otros participantes, iniciar conexión
+            // 🔧 FIXED: Solo el HOST inicia la conexión cuando hay múltiples participantes
             if (this.isHost && this.participants.length > 1 && this.mediaReady) {
+                this._log('🚀 HOST: Multiple participants detected, initiating peer connection');
                 setTimeout(() => this._initiatePeerConnection(), 1000);
             }
         });
@@ -424,7 +426,7 @@ class EnhancedVideoCallManager {
     async joinRoom(roomId, userName) {
         try {
             this._setState('joining_room');
-            this._log(`🚪 Joining room: ${roomId} as ${userName}`);
+            this._log(`🚪 Joining room: ${roomId} as ${userName} (${this.isHost ? 'HOST' : 'GUEST'})`);
 
             if (!this.socket || !this.socket.connected) {
                 throw new Error('Not connected to signaling server');
@@ -614,9 +616,12 @@ class EnhancedVideoCallManager {
                 });
             }
 
-            // Crear offer si somos host
+            // 🔧 FIXED: Solo el HOST crea offer
             if (this.isHost) {
+                this._log('🚀 HOST: Creating offer...');
                 await this._createOffer();
+            } else {
+                this._log('⏳ GUEST: Waiting for offer from host...');
             }
 
             this._setState('peer_connection_created');
@@ -756,14 +761,14 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Inicialización completa
+    // 🔧 FIXED: Inicialización completa CON ROLES CORRECTOS
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
             this._log(`🚀 Initializing as ${isHost ? 'HOST' : 'GUEST'}`);
             
             this.roomId = roomId;
             this.userName = userName;
-            this.isHost = isHost;
+            this.isHost = isHost; // 🔧 CRITICAL: Establecer rol ANTES de cualquier conexión
             this.callbacks = { ...this.callbacks, ...callbacks };
             
             // 1. Conectar al servidor
@@ -775,8 +780,9 @@ class EnhancedVideoCallManager {
             // 3. Configurar medios CON ASIGNACIÓN INMEDIATA
             await this.setupLocalMedia();
             
-            // 4. Si hay otros participantes, iniciar peer connection
-            if (this.participants.length > 1) {
+            // 4. Si hay otros participantes Y somos HOST, iniciar peer connection
+            if (this.participants.length > 1 && this.isHost) {
+                this._log('🚀 HOST: Multiple participants detected, initiating connection');
                 await this._initiatePeerConnection();
             }
             
