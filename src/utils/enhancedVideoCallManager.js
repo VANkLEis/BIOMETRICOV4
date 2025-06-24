@@ -1,5 +1,5 @@
 /**
- * ENHANCED VIDEO CALL MANAGER - ROLE ASSIGNMENT FIXED
+ * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -9,11 +9,9 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
- * 8. ✅ LOCAL VIDEO ASSIGNMENT FIXED - ASIGNACIÓN DIRECTA INMEDIATA
- * 9. ✅ ROLE ASSIGNMENT FIXED - NO MÁS DOBLE HOST
  * 
  * @author SecureCall Team
- * @version 9.0.0 - ROLE ASSIGNMENT FULLY FIXED
+ * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
  */
 
 import { io } from 'socket.io-client';
@@ -42,23 +40,25 @@ class EnhancedVideoCallManager {
         this.config = {
             // Servidores STUN/TURN más robustos
             iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
                 {
-                    urls: "stun:openrelay.metered.ca:80"
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
                 },
                 {
-                    urls: "turn:openrelay.metered.ca:80",
-                    username: "openrelayproject",
-                    credential: "openrelayproject"
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
                 },
                 {
-                    urls: "turn:openrelay.metered.ca:443",
-                    username: "openrelayproject",
-                    credential: "openrelayproject"
-                },
-                {
-                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
-                    username: "openrelayproject",
-                    credential: "openrelayproject"
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
                 }
             ],
             // Timeouts más generosos para guests
@@ -360,9 +360,8 @@ class EnhancedVideoCallManager {
                 this.callbacks.onParticipantsChange(this.participants);
             }
 
-            // 🔧 FIXED: Solo el HOST inicia la conexión cuando hay múltiples participantes
+            // Si somos host y hay otros participantes, iniciar conexión
             if (this.isHost && this.participants.length > 1 && this.mediaReady) {
-                this._log('🚀 HOST: Multiple participants detected, initiating peer connection');
                 setTimeout(() => this._initiatePeerConnection(), 1000);
             }
         });
@@ -426,7 +425,7 @@ class EnhancedVideoCallManager {
     async joinRoom(roomId, userName) {
         try {
             this._setState('joining_room');
-            this._log(`🚪 Joining room: ${roomId} as ${userName} (${this.isHost ? 'HOST' : 'GUEST'})`);
+            this._log(`🚪 Joining room: ${roomId} as ${userName}`);
 
             if (!this.socket || !this.socket.connected) {
                 throw new Error('Not connected to signaling server');
@@ -467,11 +466,11 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de medios con ASIGNACIÓN DIRECTA INMEDIATA
+    // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
             this._setState('requesting_media');
-            this._log('🎥 FIXED: Setting up local media with IMMEDIATE ASSIGNMENT...');
+            this._log('🎥 Setting up local media...');
 
             // Verificar contexto seguro
             if (!window.isSecureContext && 
@@ -569,14 +568,13 @@ class EnhancedVideoCallManager {
             this.mediaReady = true;
             this.diagnostics.mediaGranted = true;
 
-            // 🔧 CRITICAL: Llamar callback INMEDIATAMENTE para asignación directa
+            // Llamar callback inmediatamente
             if (this.callbacks.onLocalStream) {
-                this._log('🎥 CRITICAL: Calling onLocalStream callback for IMMEDIATE ASSIGNMENT');
                 this.callbacks.onLocalStream(stream);
             }
 
             this._setState('media_ready');
-            this._log('✅ FIXED: Local media setup completed with IMMEDIATE ASSIGNMENT');
+            this._log('✅ Local media setup completed');
 
             return stream;
 
@@ -616,12 +614,9 @@ class EnhancedVideoCallManager {
                 });
             }
 
-            // 🔧 FIXED: Solo el HOST crea offer
+            // Crear offer si somos host
             if (this.isHost) {
-                this._log('🚀 HOST: Creating offer...');
                 await this._createOffer();
-            } else {
-                this._log('⏳ GUEST: Waiting for offer from host...');
             }
 
             this._setState('peer_connection_created');
@@ -761,14 +756,14 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Inicialización completa CON ROLES CORRECTOS
+    // 🔧 FIXED: Inicialización completa
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
             this._log(`🚀 Initializing as ${isHost ? 'HOST' : 'GUEST'}`);
             
             this.roomId = roomId;
             this.userName = userName;
-            this.isHost = isHost; // 🔧 CRITICAL: Establecer rol ANTES de cualquier conexión
+            this.isHost = isHost;
             this.callbacks = { ...this.callbacks, ...callbacks };
             
             // 1. Conectar al servidor
@@ -777,12 +772,11 @@ class EnhancedVideoCallManager {
             // 2. Unirse al room
             await this.joinRoom(roomId, userName);
             
-            // 3. Configurar medios CON ASIGNACIÓN INMEDIATA
+            // 3. Configurar medios
             await this.setupLocalMedia();
             
-            // 4. Si hay otros participantes Y somos HOST, iniciar peer connection
-            if (this.participants.length > 1 && this.isHost) {
-                this._log('🚀 HOST: Multiple participants detected, initiating connection');
+            // 4. Si hay otros participantes, iniciar peer connection
+            if (this.participants.length > 1) {
                 await this._initiatePeerConnection();
             }
             
