@@ -32,7 +32,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // 🎨 FIXED: Estados de animación de escaneo
+  // Estados de animación
   const [faceScanning, setFaceScanning] = useState(false);
   const [fingerprintScanning, setFingerprintScanning] = useState(false);
 
@@ -106,40 +106,25 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     }
   };
 
-  // 🔧 FIXED: Callback para manejar stream local CON ASIGNACIÓN DIRECTA INMEDIATA
+  // Callback para manejar stream local
   const handleLocalStream = useCallback((stream: MediaStream) => {
-    console.log("🎥 ENHANCED FIXED: Local stream received:", stream);
+    console.log("🎥 ENHANCED: Local stream received:", stream);
     setLocalStream(stream);
     
-    // 🔧 CRITICAL: Asignar stream INMEDIATAMENTE al elemento video local
     if (localVideoRef.current) {
-      console.log("🎥 ENHANCED FIXED: Assigning local stream to video element IMMEDIATELY");
+      console.log("🎥 ENHANCED: Assigning local stream to video element");
       localVideoRef.current.srcObject = stream;
-      localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
-      localVideoRef.current.autoplay = true;
-      localVideoRef.current.playsInline = true;
+      localVideoRef.current.muted = true;
       
-      // 🔧 FIXED: Forzar reproducción inmediata
-      const playPromise = localVideoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          console.log("✅ ENHANCED FIXED: Local video is now playing and VISIBLE");
-        }).catch(error => {
-          console.error("❌ ENHANCED FIXED: Local video play failed:", error);
-          // Reintentar después de un momento
-          setTimeout(() => {
-            if (localVideoRef.current && localVideoRef.current.paused) {
-              localVideoRef.current.play().catch(console.error);
-            }
-          }, 1000);
-        });
-      }
-    } else {
-      console.error("❌ ENHANCED FIXED: Local video ref is null!");
+      localVideoRef.current.play().then(() => {
+        console.log("✅ ENHANCED: Local video is now playing");
+      }).catch(error => {
+        console.error("❌ ENHANCED: Local video play failed:", error);
+      });
     }
   }, []);
 
-  // Callback para manejar stream remoto (NO TOCAR - YA FUNCIONA)
+  // Callback para manejar stream remoto
   const handleRemoteStream = useCallback((stream: MediaStream | null) => {
     console.log("🖼️ ENHANCED: Remote stream received:", stream);
     setRemoteStream(stream);
@@ -181,7 +166,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setConnectionState('error');
   }, []);
 
-  // 🔧 FIXED: Inicialización automática CON ROLES CORRECTOS
+  // Inicialización automática
   useEffect(() => {
     const initializeCall = async () => {
       try {
@@ -191,9 +176,8 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 
         console.log('🚀 ENHANCED: Initializing Enhanced VideoCallManager...');
         
-        // 🔧 CRITICAL: Determinar rol basado en URL o parámetro
-        // Por ahora, el primer usuario en el room será HOST, el resto GUEST
-        const isHost = !window.location.hash.includes('guest');
+        // Determinar rol (simplificado para testing)
+        const isHost = Math.random() > 0.5;
         setIsGuest(!isHost);
         
         console.log(`🎭 ENHANCED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
@@ -207,7 +191,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           onError: handleError
         };
         
-        // Inicializar Enhanced VideoCallManager CON ROL CORRECTO
+        // Inicializar Enhanced VideoCallManager
         const manager = await initializeEnhancedVideoCall(roomId, userName, isHost, callbacks);
         enhancedManagerRef.current = manager;
         
@@ -265,19 +249,16 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     };
   }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
 
-  // 🎨 FIXED: Animación de escaneo facial
+  // Animaciones de escaneo
   const handleFaceScan = () => {
     if (faceScanning) return;
     setFaceScanning(true);
-    console.log('🔍 Starting face scan animation...');
     setTimeout(() => setFaceScanning(false), 3000);
   };
 
-  // 🎨 FIXED: Animación de escaneo de huella
   const handleFingerprintScan = () => {
     if (fingerprintScanning) return;
     setFingerprintScanning(true);
-    console.log('👆 Starting fingerprint scan animation...');
     setTimeout(() => setFingerprintScanning(false), 3000);
   };
 
@@ -475,7 +456,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     );
   }
 
-  // 🔧 FIXED: Interfaz principal de videollamada CON CONTROLES RESTAURADOS
+  // Interfaz principal de videollamada
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Video Container */}
@@ -491,7 +472,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
         />
         
-        {/* 🎨 FIXED: Animaciones de escaneo sobre el video remoto */}
+        {/* Animaciones de escaneo */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none">
             <div className="relative w-full h-full">
@@ -528,7 +509,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           </div>
         )}
         
-        {/* 🔧 FIXED: Local Video (Picture-in-Picture) CON ASIGNACIÓN DIRECTA */}
+        {/* Local Video (Picture-in-Picture) */}
         <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
           <video
             ref={localVideoRef}
@@ -536,9 +517,9 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             playsInline
             muted
             className="w-full h-full object-cover"
-            onLoadedMetadata={() => console.log("✅ ENHANCED FIXED: Local video metadata loaded and ready")}
-            onPlay={() => console.log("✅ ENHANCED FIXED: Local video started playing and is VISIBLE")}
-            onError={(e) => console.error("❌ ENHANCED FIXED: Local video error:", e)}
+            onLoadedMetadata={() => console.log("✅ ENHANCED: Local video metadata loaded")}
+            onPlay={() => console.log("✅ ENHANCED: Local video started playing")}
+            onError={(e) => console.error("❌ ENHANCED: Local video error:", e)}
           />
           
           {!isVideoEnabled && (
@@ -631,7 +612,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         )}
       </div>
 
-      {/* 🔧 FIXED: Enhanced Controls RESTAURADOS */}
+      {/* Enhanced Controls */}
       <div className="bg-gray-800 px-6 py-4 flex items-center justify-center space-x-4">
         <button
           onClick={handleToggleAudio}
@@ -661,7 +642,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           )}
         </button>
 
-        {/* 🎨 FIXED: Botones de animación de escaneo RESTAURADOS */}
+        {/* Botones de animación de escaneo */}
         <button
           onClick={handleFaceScan}
           disabled={faceScanning}
@@ -701,7 +682,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         </button>
       </div>
 
-      {/* 🎨 FIXED: CSS para animaciones RESTAURADO */}
+      {/* CSS para animaciones */}
       <style jsx>{`
         @keyframes faceScan {
           0% { top: 0; opacity: 1; }
