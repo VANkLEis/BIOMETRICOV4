@@ -737,7 +737,7 @@ return (
       </div>
     </div>
 
-    {/* 🎨 CSS para animaciones de escaneo */}
+ {/* 🎨 CSS para animaciones de escaneo */}
     <style jsx>{`
       @keyframes faceScan {
         0% { top: 0; opacity: 1; }
@@ -758,5 +758,5 @@ return (
     `}</style>
   </div>
 );
-
+};
 export default EnhancedWebRTCRoom;
