@@ -462,9 +462,10 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 // MODIFICACIÓN DEFINITIVA: Eliminar TODAS las condiciones de los botones
 // BUSCAR la sección completa de return del componente principal y REEMPLAZAR por:
 
-// 🎨 INTERFAZ PRINCIPAL - SOLO VIDEO REMOTO
+// REEMPLAZAR el return principal completo con este código:
+
 return (
-  <div className="flex flex-col h-full bg-gray-900">
+  <div className="flex flex-col h-full bg-gray-900 relative">
     {/* Video Container - Solo Remoto */}
     <div className="flex-1 relative">
       {/* Remote Video - Pantalla Completa */}
@@ -478,13 +479,12 @@ return (
         onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
       />
       
-      {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
+      {/* 🎨 ANIMACIONES DE ESCANEO */}
       {faceScanning && (
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none z-20">
           <div className="relative w-full h-full">
             {/* Marco de escaneo facial */}
             <div className="absolute inset-0 border-4 border-green-400 border-dashed animate-pulse">
-              {/* Línea de escaneo que baja */}
               <div 
                 className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
                 style={{
@@ -492,20 +492,16 @@ return (
                   boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
                 }}
               />
-              {/* Esquinas del marco */}
               <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
               <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
               <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
               <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
             </div>
-            {/* Overlay verde */}
             <div className="absolute inset-0 bg-green-400 bg-opacity-10" />
-            {/* Texto de escaneo */}
             <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
               🔍 Escaneando Rostro...
             </div>
-            {/* Progreso */}
-            <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+            <div className="absolute bottom-20 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
               <div className="text-green-400 text-sm mb-2">Análisis Facial en Progreso</div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
@@ -519,11 +515,9 @@ return (
       )}
       
       {handScanning && (
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none z-20">
           <div className="relative w-full h-full">
-            {/* Marco de escaneo de mano */}
             <div className="absolute inset-0 border-4 border-blue-400 border-dashed animate-pulse">
-              {/* Círculo pulsante para mano */}
               <div 
                 className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
                 style={{
@@ -531,7 +525,6 @@ return (
                   boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
                 }}
               />
-              {/* Líneas de escaneo radiales */}
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                 <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
                 <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
@@ -539,14 +532,11 @@ return (
                 <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
               </div>
             </div>
-            {/* Overlay azul */}
             <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
-            {/* Texto de escaneo */}
             <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
               👋 Escaneando Mano...
             </div>
-            {/* Progreso */}
-            <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+            <div className="absolute bottom-20 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
               <div className="text-blue-400 text-sm mb-2">Análisis Biométrico de Mano</div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
@@ -559,23 +549,21 @@ return (
         </div>
       )}
 
-      {/* Connection Status */}
-      <div className="absolute top-4 left-4">
+      {/* INDICADORES SUPERIORES */}
+      <div className="absolute top-4 left-4 z-30">
         <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
           {getStateMessage()}
         </div>
       </div>
 
-      {/* Participants Count */}
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 z-30">
         <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
           <Users className="h-4 w-4 mr-1" />
           {participants.length || 1} participant{(participants.length || 1) !== 1 ? 's' : ''}
         </div>
       </div>
 
-      {/* Debug Toggle */}
-      <div className="absolute top-16 left-4">
+      <div className="absolute top-16 left-4 z-30">
         <button
           onClick={() => {
             setShowDebug(!showDebug);
@@ -587,9 +575,9 @@ return (
         </button>
       </div>
 
-      {/* Enhanced Debug Info Panel */}
+      {/* DEBUG PANEL */}
       {showDebug && debugInfo && (
-        <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
+        <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto z-30">
           <h4 className="text-white font-semibold mb-2 text-sm">Enhanced Debug Information:</h4>
           <div className="text-gray-300 text-xs space-y-1">
             <p>State: {connectionState}</p>
@@ -615,20 +603,9 @@ return (
         </div>
       )}
 
-      {/* No Remote Stream Message */}
-      {['media_ready', 'ready'].includes(connectionState) && !remoteStream && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
-          <div className="text-center text-white">
-            <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-            <p className="text-xl">Waiting for other participants...</p>
-            <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
-          </div>
-        </div>
-      )}
-
-      {/* MENSAJE DE ESTADO SUPERPUESTO CUANDO HAY ERRORES O CONEXIÓN */}
+      {/* MENSAJES DE ESTADO SUPERPUESTOS (solo cuando no hay video remoto) */}
       {['idle', 'connecting_signaling', 'signaling_connected', 'joining_room', 'requesting_media'].includes(connectionState) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-80">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-80 z-10">
           <div className="text-center p-8 max-w-md text-white">
             <div className="relative mb-6">
               <Wifi className="h-16 w-16 text-blue-500 mx-auto animate-pulse" />
@@ -668,7 +645,7 @@ return (
 
       {/* MENSAJE DE ERROR SUPERPUESTO */}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90">
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 z-10">
           <div className="text-center p-8 max-w-4xl text-white">
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h3 className="text-xl font-semibold mb-2">Connection Error</h3>
@@ -728,10 +705,21 @@ return (
           </div>
         </div>
       )}
+
+      {/* MENSAJE DE ESPERA DE PARTICIPANTES */}
+      {['media_ready', 'ready'].includes(connectionState) && !remoteStream && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 z-10">
+          <div className="text-center text-white">
+            <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+            <p className="text-xl">Waiting for other participants...</p>
+            <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
+          </div>
+        </div>
+      )}
     </div>
 
-    {/* 🎨 BARRA DE FUNCIONES SIEMPRE VISIBLE - SIN CONDICIONES */}
-    <div className="bg-gray-800 px-6 py-4">
+    {/* 🎨 BARRA DE CONTROLES FIJA - SIEMPRE VISIBLE - Z-INDEX ALTO */}
+    <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-95 backdrop-blur-sm px-6 py-4 z-40">
       <div className="flex items-center justify-center space-x-6">
         {/* Controles de Audio/Video */}
         <button
