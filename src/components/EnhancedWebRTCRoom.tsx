@@ -719,8 +719,14 @@ return (
       )}
     </div>
 
-    {/* 🎨 BARRA DE CONTROLES FIJA - SIEMPRE VISIBLE - Z-INDEX ALTO */}
+     {/* 🎨 BARRA DE CONTROLES FIJA - SIEMPRE VISIBLE - Z-INDEX ALTO */}
     <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-95 backdrop-blur-sm px-6 py-4 z-40">
+      {/* Room ID */}
+      <div className="text-center mb-3">
+        <span className="text-gray-300 text-sm">Room ID: </span>
+        <span className="text-white font-mono bg-gray-700 px-2 py-1 rounded text-sm">{roomId}</span>
+      </div>
+      
       <div className="flex items-center justify-center space-x-6">
         {/* Controles de Audio/Video */}
         <button
