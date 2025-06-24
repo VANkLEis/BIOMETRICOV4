@@ -9,7 +9,6 @@ interface EnhancedWebRTCRoomProps {
 }
 
 const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
-  const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const enhancedManagerRef = useRef<any>(null);
   
@@ -32,9 +31,9 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // Estados de animación
+  // 🎨 ADDED: Estados de animación de escaneo
   const [faceScanning, setFaceScanning] = useState(false);
-  const [fingerprintScanning, setFingerprintScanning] = useState(false);
+  const [handScanning, setHandScanning] = useState(false);
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -106,22 +105,11 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     }
   };
 
-  // Callback para manejar stream local
+  // Callback para manejar stream local (sin mostrar)
   const handleLocalStream = useCallback((stream: MediaStream) => {
-    console.log("🎥 ENHANCED: Local stream received:", stream);
+    console.log("🎥 ENHANCED: Local stream received (hidden):", stream);
     setLocalStream(stream);
-    
-    if (localVideoRef.current) {
-      console.log("🎥 ENHANCED: Assigning local stream to video element");
-      localVideoRef.current.srcObject = stream;
-      localVideoRef.current.muted = true;
-      
-      localVideoRef.current.play().then(() => {
-        console.log("✅ ENHANCED: Local video is now playing");
-      }).catch(error => {
-        console.error("❌ ENHANCED: Local video play failed:", error);
-      });
-    }
+    // No asignamos a ningún elemento video - solo guardamos referencia
   }, []);
 
   // Callback para manejar stream remoto
@@ -249,17 +237,32 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     };
   }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
 
-  // Animaciones de escaneo
+  // 🎨 ADDED: Animación de escaneo facial
   const handleFaceScan = () => {
     if (faceScanning) return;
+    
     setFaceScanning(true);
-    setTimeout(() => setFaceScanning(false), 3000);
+    console.log('🔍 Starting face scan animation...');
+    
+    // Animación dura 3 segundos
+    setTimeout(() => {
+      setFaceScanning(false);
+      console.log('✅ Face scan animation completed');
+    }, 3000);
   };
 
-  const handleFingerprintScan = () => {
-    if (fingerprintScanning) return;
-    setFingerprintScanning(true);
-    setTimeout(() => setFingerprintScanning(false), 3000);
+  // 🎨 ADDED: Animación de escaneo de mano
+  const handleHandScan = () => {
+    if (handScanning) return;
+    
+    setHandScanning(true);
+    console.log('👋 Starting hand scan animation...');
+    
+    // Animación dura 3 segundos
+    setTimeout(() => {
+      setHandScanning(false);
+      console.log('✅ Hand scan animation completed');
+    }, 3000);
   };
 
   // Toggle controles
@@ -456,12 +459,12 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     );
   }
 
-  // Interfaz principal de videollamada
+  // 🎨 INTERFAZ PRINCIPAL - SOLO VIDEO REMOTO
   return (
     <div className="flex flex-col h-full bg-gray-900">
-      {/* Video Container */}
+      {/* Video Container - Solo Remoto */}
       <div className="flex-1 relative">
-        {/* Remote Video */}
+        {/* Remote Video - Pantalla Completa */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -472,77 +475,86 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
         />
         
-        {/* Animaciones de escaneo */}
+        {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none">
             <div className="relative w-full h-full">
-              <div 
-                className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
-                style={{
-                  animation: 'faceScan 3s ease-in-out',
-                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
-                }}
-              />
-              <div className="absolute inset-0 bg-green-400 bg-opacity-10 border-2 border-green-400 border-dashed animate-pulse" />
-              <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm font-medium">
-                🔍 Scanning Face...
+              {/* Marco de escaneo facial */}
+              <div className="absolute inset-0 border-4 border-green-400 border-dashed animate-pulse">
+                {/* Línea de escaneo que baja */}
+                <div 
+                  className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                  style={{
+                    animation: 'faceScan 3s ease-in-out',
+                    boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
+                  }}
+                />
+                {/* Esquinas del marco */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
+              </div>
+              {/* Overlay verde */}
+              <div className="absolute inset-0 bg-green-400 bg-opacity-10" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+                🔍 Escaneando Rostro...
+              </div>
+              {/* Progreso */}
+              <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+                <div className="text-green-400 text-sm mb-2">Análisis Facial en Progreso</div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-green-400 h-2 rounded-full"
+                    style={{ animation: 'progressBar 3s ease-in-out' }}
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
         )}
         
-        {fingerprintScanning && (
+        {handScanning && (
           <div className="absolute inset-0 pointer-events-none">
             <div className="relative w-full h-full">
-              <div 
-                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-4 border-blue-400 rounded-full"
-                style={{
-                  animation: 'fingerprintScan 3s ease-in-out infinite',
-                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
-                }}
-              />
-              <div className="absolute inset-0 bg-blue-400 bg-opacity-10 animate-pulse" />
-              <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-3 py-1 rounded-lg text-sm font-medium">
-                👆 Scanning Fingerprint...
+              {/* Marco de escaneo de mano */}
+              <div className="absolute inset-0 border-4 border-blue-400 border-dashed animate-pulse">
+                {/* Círculo pulsante para mano */}
+                <div 
+                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
+                  style={{
+                    animation: 'handScan 3s ease-in-out infinite',
+                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
+                  }}
+                />
+                {/* Líneas de escaneo radiales */}
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                  <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                </div>
+              </div>
+              {/* Overlay azul */}
+              <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+                👋 Escaneando Mano...
+              </div>
+              {/* Progreso */}
+              <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+                <div className="text-blue-400 text-sm mb-2">Análisis Biométrico de Mano</div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-blue-400 h-2 rounded-full"
+                    style={{ animation: 'progressBar 3s ease-in-out' }}
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
         )}
-        
-        {/* Local Video (Picture-in-Picture) */}
-        <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-            onLoadedMetadata={() => console.log("✅ ENHANCED: Local video metadata loaded")}
-            onPlay={() => console.log("✅ ENHANCED: Local video started playing")}
-            onError={(e) => console.error("❌ ENHANCED: Local video error:", e)}
-          />
-          
-          {!isVideoEnabled && (
-            <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
-              <VideoOff className="h-8 w-8 text-gray-400" />
-            </div>
-          )}
-          
-          {/* Status Indicators */}
-          <div className="absolute top-2 left-2">
-            <div className={`w-3 h-3 rounded-full ${
-              ['peer_connected', 'ready'].includes(connectionState) ? 'bg-green-500' : 'bg-red-500'
-            }`}></div>
-          </div>
-          
-          <div className="absolute top-2 right-2">
-            <div className={`px-2 py-1 rounded text-xs font-medium ${
-              isGuest ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'
-            }`}>
-              {isGuest ? 'Guest' : 'Host'}
-            </div>
-          </div>
-        </div>
 
         {/* Connection Status */}
         <div className="absolute top-4 left-4">
@@ -552,7 +564,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         </div>
 
         {/* Participants Count */}
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
+        <div className="absolute top-4 right-4">
           <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
             <Users className="h-4 w-4 mr-1" />
             {participants.length || 1} participant{(participants.length || 1) !== 1 ? 's' : ''}
@@ -612,77 +624,120 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         )}
       </div>
 
-      {/* Enhanced Controls */}
-      <div className="bg-gray-800 px-6 py-4 flex items-center justify-center space-x-4">
-        <button
-          onClick={handleToggleAudio}
-          className={`p-3 rounded-full transition-colors ${
-            isAudioEnabled ? 'bg-gray-600 hover:bg-gray-700' : 'bg-red-600 hover:bg-red-700'
-          }`}
-          title={isAudioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-        >
-          {isAudioEnabled ? (
-            <Mic className="h-6 w-6 text-white" />
-          ) : (
-            <MicOff className="h-6 w-6 text-white" />
+      {/* 🎨 BARRA DE FUNCIONES MEJORADA */}
+      <div className="bg-gray-800 px-6 py-4">
+        <div className="flex items-center justify-center space-x-6">
+          {/* Controles de Audio/Video */}
+          <button
+            onClick={handleToggleAudio}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              isAudioEnabled 
+                ? 'bg-gray-600 hover:bg-gray-700 text-white' 
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+            title={isAudioEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+          >
+            {isAudioEnabled ? (
+              <Mic className="h-6 w-6" />
+            ) : (
+              <MicOff className="h-6 w-6" />
+            )}
+          </button>
+
+          <button
+            onClick={handleToggleVideo}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              isVideoEnabled 
+                ? 'bg-gray-600 hover:bg-gray-700 text-white' 
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+            title={isVideoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+          >
+            {isVideoEnabled ? (
+              <Video className="h-6 w-6" />
+            ) : (
+              <VideoOff className="h-6 w-6" />
+            )}
+          </button>
+
+          {/* Separador */}
+          <div className="h-8 w-px bg-gray-600"></div>
+
+          {/* 🎨 BOTONES DE ESCANEO */}
+          <button
+            onClick={handleFaceScan}
+            disabled={faceScanning}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              faceScanning 
+                ? 'bg-green-600 animate-pulse text-white' 
+                : 'bg-green-600 hover:bg-green-700 text-white hover:scale-105'
+            } disabled:opacity-75`}
+            title="Escanear rostro"
+          >
+            <Scan className="h-6 w-6" />
+          </button>
+
+          <button
+            onClick={handleHandScan}
+            disabled={handScanning}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              handScanning 
+                ? 'bg-blue-600 animate-pulse text-white' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
+            } disabled:opacity-75`}
+            title="Escanear mano"
+          >
+            <Fingerprint className="h-6 w-6" />
+          </button>
+
+          {/* Separador */}
+          <div className="h-8 w-px bg-gray-600"></div>
+
+          {/* Botón de Debug */}
+          <button
+            onClick={handleGetDebugInfo}
+            className="p-4 rounded-full bg-purple-600 hover:bg-purple-700 text-white transition-all duration-200 hover:scale-105"
+            title="Información de debug"
+          >
+            <Eye className="h-6 w-6" />
+          </button>
+
+          {/* Botón de Colgar */}
+          <button
+            onClick={handleEndCall}
+            className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 hover:scale-105"
+            title="Colgar llamada"
+          >
+            <Phone className="h-6 w-6 transform rotate-135" />
+          </button>
+        </div>
+
+        {/* Indicadores de Estado */}
+        <div className="flex items-center justify-center mt-3 space-x-4 text-sm text-gray-400">
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${
+              ['peer_connected', 'ready'].includes(connectionState) ? 'bg-green-500' : 'bg-red-500'
+            }`}></div>
+            <span>Conexión</span>
+          </div>
+          
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${
+              isGuest ? 'bg-blue-500' : 'bg-purple-500'
+            }`}></div>
+            <span>{isGuest ? 'Invitado' : 'Anfitrión'}</span>
+          </div>
+          
+          {(faceScanning || handScanning) && (
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+              <span>Escaneando...</span>
+            </div>
           )}
-        </button>
-
-        <button
-          onClick={handleToggleVideo}
-          className={`p-3 rounded-full transition-colors ${
-            isVideoEnabled ? 'bg-gray-600 hover:bg-gray-700' : 'bg-red-600 hover:bg-red-700'
-          }`}
-          title={isVideoEnabled ? 'Turn off camera' : 'Turn on camera'}
-        >
-          {isVideoEnabled ? (
-            <Video className="h-6 w-6 text-white" />
-          ) : (
-            <VideoOff className="h-6 w-6 text-white" />
-          )}
-        </button>
-
-        {/* Botones de animación de escaneo */}
-        <button
-          onClick={handleFaceScan}
-          disabled={faceScanning}
-          className={`p-3 rounded-full transition-colors ${
-            faceScanning ? 'bg-green-600 animate-pulse' : 'bg-green-600 hover:bg-green-700'
-          } disabled:opacity-50`}
-          title="Face scan animation"
-        >
-          <Scan className="h-6 w-6 text-white" />
-        </button>
-
-        <button
-          onClick={handleFingerprintScan}
-          disabled={fingerprintScanning}
-          className={`p-3 rounded-full transition-colors ${
-            fingerprintScanning ? 'bg-blue-600 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'
-          } disabled:opacity-50`}
-          title="Fingerprint scan animation"
-        >
-          <Fingerprint className="h-6 w-6 text-white" />
-        </button>
-
-        <button
-          onClick={handleGetDebugInfo}
-          className="p-3 rounded-full bg-purple-600 hover:bg-purple-700 transition-colors"
-          title="Get enhanced debug info"
-        >
-          <Eye className="h-6 w-6 text-white" />
-        </button>
-
-        <button
-          onClick={handleEndCall}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-700 transition-colors"
-          title="End call"
-        >
-          <Phone className="h-6 w-6 text-white transform rotate-135" />
-        </button>
+        </div>
       </div>
 
-      {/* CSS para animaciones */}
+      {/* 🎨 CSS para animaciones de escaneo */}
       <style jsx>{`
         @keyframes faceScan {
           0% { top: 0; opacity: 1; }
@@ -690,10 +745,15 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           100% { top: 100%; opacity: 0; }
         }
         
-        @keyframes fingerprintScan {
-          0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+        @keyframes handScan {
+          0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
           50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
-          100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+          100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+        }
+        
+        @keyframes progressBar {
+          0% { width: 0%; }
+          100% { width: 100%; }
         }
       `}</style>
     </div>
