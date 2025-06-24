@@ -459,304 +459,305 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     );
   }
 
-// 🎨 INTERFAZ PRINCIPAL - SIEMPRE VISIBLE
-return (
-  <div className="flex flex-col h-full bg-gray-900">
-    {/* Video Container - Solo Remoto */}
-    <div className="flex-1 relative">
-      {/* Remote Video - Pantalla Completa */}
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        className="w-full h-full object-cover bg-gray-800"
-        onLoadedMetadata={() => console.log("✅ ENHANCED: Remote video metadata loaded")}
-        onPlay={() => console.log("✅ ENHANCED: Remote video started playing")}
-        onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
-      />
-      
-      {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
-      {faceScanning && (
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="relative w-full h-full">
-            {/* Marco de escaneo facial */}
-            <div className="absolute inset-0 border-4 border-green-400 border-dashed animate-pulse">
-              {/* Línea de escaneo que baja */}
-              <div 
-                className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
-                style={{
-                  animation: 'faceScan 3s ease-in-out',
-                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
-                }}
-              />
-              {/* Esquinas del marco */}
-              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
-              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
-              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
-              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
-            </div>
-            {/* Overlay verde */}
-            <div className="absolute inset-0 bg-green-400 bg-opacity-10" />
-            {/* Texto de escaneo */}
-            <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
-              🔍 Escaneando Rostro...
-            </div>
-            {/* Progreso */}
-            <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
-              <div className="text-green-400 text-sm mb-2">Análisis Facial en Progreso</div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-green-400 h-2 rounded-full"
-                  style={{ animation: 'progressBar 3s ease-in-out' }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {handScanning && (
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="relative w-full h-full">
-            {/* Marco de escaneo de mano */}
-            <div className="absolute inset-0 border-4 border-blue-400 border-dashed animate-pulse">
-              {/* Círculo pulsante para mano */}
-              <div 
-                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
-                style={{
-                  animation: 'handScan 3s ease-in-out infinite',
-                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
-                }}
-              />
-              {/* Líneas de escaneo radiales */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-                <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-              </div>
-            </div>
-            {/* Overlay azul */}
-            <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
-            {/* Texto de escaneo */}
-            <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
-              👋 Escaneando Mano...
-            </div>
-            {/* Progreso */}
-            <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
-              <div className="text-blue-400 text-sm mb-2">Análisis Biométrico de Mano</div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-blue-400 h-2 rounded-full"
-                  style={{ animation: 'progressBar 3s ease-in-out' }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Connection Status */}
-      <div className="absolute top-4 left-4">
-        <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
-          {getStateMessage()}
-        </div>
-      </div>
-
-      {/* Participants Count */}
-      <div className="absolute top-4 right-4">
-        <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
-          <Users className="h-4 w-4 mr-1" />
-          {participants.length || 1} participant{(participants.length || 1) !== 1 ? 's' : ''}
-        </div>
-      </div>
-
-      {/* Debug Toggle */}
-      <div className="absolute top-16 left-4">
-        <button
-          onClick={() => {
-            setShowDebug(!showDebug);
-            if (!showDebug) handleGetDebugInfo();
-          }}
-          className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100"
-        >
-          {showDebug ? 'Hide' : 'Show'} Enhanced Debug
-        </button>
-      </div>
-
-      {/* Enhanced Debug Info Panel */}
-      {showDebug && debugInfo && (
-        <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
-          <h4 className="text-white font-semibold mb-2 text-sm">Enhanced Debug Information:</h4>
-          <div className="text-gray-300 text-xs space-y-1">
-            <p>State: {connectionState}</p>
-            <p>Role: {isGuest ? 'Guest' : 'Host'}</p>
-            <p>Attempts: {debugInfo.connectionAttempts}</p>
-            <p>Local Stream: {debugInfo.hasLocalStream ? '✅' : '❌'}</p>
-            <p>Remote Stream: {debugInfo.hasRemoteStream ? '✅' : '❌'}</p>
-            <p>Socket: {debugInfo.isSocketConnected ? '✅' : '❌'}</p>
-            <p>Peer State: {debugInfo.peerConnectionState || 'none'}</p>
-            <p>ICE State: {debugInfo.iceConnectionState || 'none'}</p>
-            {debugInfo.diagnostics && (
-              <div className="mt-2 pt-2 border-t border-gray-600">
-                <p className="font-semibold">Diagnostics:</p>
-                <p>Server: {debugInfo.diagnostics.serverReachable ? '✅' : '❌'}</p>
-                <p>Socket: {debugInfo.diagnostics.socketConnected ? '✅' : '❌'}</p>
-                <p>Room: {debugInfo.diagnostics.roomJoined ? '✅' : '❌'}</p>
-                <p>Media: {debugInfo.diagnostics.mediaGranted ? '✅' : '❌'}</p>
-                <p>Peer: {debugInfo.diagnostics.peerConnected ? '✅' : '❌'}</p>
-                <p>ICE: {debugInfo.diagnostics.iceConnected ? '✅' : '❌'}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* No Remote Stream Message - Solo mostrar en estados específicos */}
-      {['media_ready', 'ready'].includes(connectionState) && !remoteStream && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
-          <div className="text-center text-white">
-            <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-            <p className="text-xl">Waiting for other participants...</p>
-            <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
-          </div>
-        </div>
-      )}
-    </div>
-
-    {/* 🎨 BARRA DE FUNCIONES SIEMPRE VISIBLE */}
-    <div className="bg-gray-800 px-6 py-4">
-      <div className="flex items-center justify-center space-x-6">
-        {/* Controles de Audio/Video */}
-        <button
-          onClick={handleToggleAudio}
-          className={`p-4 rounded-full transition-all duration-200 ${
-            isAudioEnabled 
-              ? 'bg-gray-600 hover:bg-gray-700 text-white' 
-              : 'bg-red-600 hover:bg-red-700 text-white'
-          }`}
-          title={isAudioEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
-        >
-          {isAudioEnabled ? (
-            <Mic className="h-6 w-6" />
-          ) : (
-            <MicOff className="h-6 w-6" />
-          )}
-        </button>
-
-        <button
-          onClick={handleToggleVideo}
-          className={`p-4 rounded-full transition-all duration-200 ${
-            isVideoEnabled 
-              ? 'bg-gray-600 hover:bg-gray-700 text-white' 
-              : 'bg-red-600 hover:bg-red-700 text-white'
-          }`}
-          title={isVideoEnabled ? 'Apagar cámara' : 'Encender cámara'}
-        >
-          {isVideoEnabled ? (
-            <Video className="h-6 w-6" />
-          ) : (
-            <VideoOff className="h-6 w-6" />
-          )}
-        </button>
-
-        {/* Separador */}
-        <div className="h-8 w-px bg-gray-600"></div>
-
-        {/* 🎨 BOTONES DE ESCANEO SIEMPRE VISIBLES */}
-        <button
-          onClick={handleFaceScan}
-          disabled={faceScanning}
-          className={`p-4 rounded-full transition-all duration-200 ${
-            faceScanning 
-              ? 'bg-green-600 animate-pulse text-white' 
-              : 'bg-green-600 hover:bg-green-700 text-white hover:scale-105'
-          } disabled:opacity-75`}
-          title="Escanear rostro"
-        >
-          <Scan className="h-6 w-6" />
-        </button>
-
-        <button
-          onClick={handleHandScan}
-          disabled={handScanning}
-          className={`p-4 rounded-full transition-all duration-200 ${
-            handScanning 
-              ? 'bg-blue-600 animate-pulse text-white' 
-              : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
-          } disabled:opacity-75`}
-          title="Escanear mano"
-        >
-          <Fingerprint className="h-6 w-6" />
-        </button>
-
-        {/* Separador */}
-        <div className="h-8 w-px bg-gray-600"></div>
-
-        {/* Botón de Debug */}
-        <button
-          onClick={handleGetDebugInfo}
-          className="p-4 rounded-full bg-purple-600 hover:bg-purple-700 text-white transition-all duration-200 hover:scale-105"
-          title="Información de debug"
-        >
-          <Eye className="h-6 w-6" />
-        </button>
-
-        {/* Botón de Colgar */}
-        <button
-          onClick={handleEndCall}
-          className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 hover:scale-105"
-          title="Colgar llamada"
-        >
-          <Phone className="h-6 w-6 transform rotate-135" />
-        </button>
-      </div>
-
-      {/* Indicadores de Estado */}
-      <div className="flex items-center justify-center mt-3 space-x-4 text-sm text-gray-400">
-        <div className="flex items-center space-x-1">
-          <div className={`w-2 h-2 rounded-full ${
-            ['peer_connected', 'ready'].includes(connectionState) ? 'bg-green-500' : 'bg-red-500'
-          }`}></div>
-          <span>Conexión</span>
-        </div>
+  // 🎨 INTERFAZ PRINCIPAL - SOLO VIDEO REMOTO
+  return (
+    <div className="flex flex-col h-full bg-gray-900">
+      {/* Video Container - Solo Remoto */}
+      <div className="flex-1 relative">
+        {/* Remote Video - Pantalla Completa */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover bg-gray-800"
+          onLoadedMetadata={() => console.log("✅ ENHANCED: Remote video metadata loaded")}
+          onPlay={() => console.log("✅ ENHANCED: Remote video started playing")}
+          onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
+        />
         
-        <div className="flex items-center space-x-1">
-          <div className={`w-2 h-2 rounded-full ${
-            isGuest ? 'bg-blue-500' : 'bg-purple-500'
-          }`}></div>
-          <span>{isGuest ? 'Invitado' : 'Anfitrión'}</span>
-        </div>
+        {/* 🎨 ADDED: Animaciones de escaneo sobre el video remoto */}
+        {faceScanning && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="relative w-full h-full">
+              {/* Marco de escaneo facial */}
+              <div className="absolute inset-0 border-4 border-green-400 border-dashed animate-pulse">
+                {/* Línea de escaneo que baja */}
+                <div 
+                  className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                  style={{
+                    animation: 'faceScan 3s ease-in-out',
+                    boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
+                  }}
+                />
+                {/* Esquinas del marco */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
+              </div>
+              {/* Overlay verde */}
+              <div className="absolute inset-0 bg-green-400 bg-opacity-10" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+                🔍 Escaneando Rostro...
+              </div>
+              {/* Progreso */}
+              <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+                <div className="text-green-400 text-sm mb-2">Análisis Facial en Progreso</div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-green-400 h-2 rounded-full"
+                    style={{ animation: 'progressBar 3s ease-in-out' }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
-        {(faceScanning || handScanning) && (
-          <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
-            <span>Escaneando...</span>
+        {handScanning && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="relative w-full h-full">
+              {/* Marco de escaneo de mano */}
+              <div className="absolute inset-0 border-4 border-blue-400 border-dashed animate-pulse">
+                {/* Círculo pulsante para mano */}
+                <div 
+                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
+                  style={{
+                    animation: 'handScan 3s ease-in-out infinite',
+                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
+                  }}
+                />
+                {/* Líneas de escaneo radiales */}
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                  <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                </div>
+              </div>
+              {/* Overlay azul */}
+              <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
+              {/* Texto de escaneo */}
+              <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+                👋 Escaneando Mano...
+              </div>
+              {/* Progreso */}
+              <div className="absolute bottom-4 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+                <div className="text-blue-400 text-sm mb-2">Análisis Biométrico de Mano</div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-blue-400 h-2 rounded-full"
+                    style={{ animation: 'progressBar 3s ease-in-out' }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Connection Status */}
+        <div className="absolute top-4 left-4">
+          <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
+            {getStateMessage()}
+          </div>
+        </div>
+
+        {/* Participants Count */}
+        <div className="absolute top-4 right-4">
+          <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
+            <Users className="h-4 w-4 mr-1" />
+            {participants.length || 1} participant{(participants.length || 1) !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Debug Toggle */}
+        <div className="absolute top-16 left-4">
+          <button
+            onClick={() => {
+              setShowDebug(!showDebug);
+              if (!showDebug) handleGetDebugInfo();
+            }}
+            className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-white text-xs hover:bg-opacity-100"
+          >
+            {showDebug ? 'Hide' : 'Show'} Enhanced Debug
+          </button>
+        </div>
+
+        {/* Enhanced Debug Info Panel */}
+        {showDebug && debugInfo && (
+          <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto">
+            <h4 className="text-white font-semibold mb-2 text-sm">Enhanced Debug Information:</h4>
+            <div className="text-gray-300 text-xs space-y-1">
+              <p>State: {connectionState}</p>
+              <p>Role: {isGuest ? 'Guest' : 'Host'}</p>
+              <p>Attempts: {debugInfo.connectionAttempts}</p>
+              <p>Local Stream: {debugInfo.hasLocalStream ? '✅' : '❌'}</p>
+              <p>Remote Stream: {debugInfo.hasRemoteStream ? '✅' : '❌'}</p>
+              <p>Socket: {debugInfo.isSocketConnected ? '✅' : '❌'}</p>
+              <p>Peer State: {debugInfo.peerConnectionState || 'none'}</p>
+              <p>ICE State: {debugInfo.iceConnectionState || 'none'}</p>
+              {debugInfo.diagnostics && (
+                <div className="mt-2 pt-2 border-t border-gray-600">
+                  <p className="font-semibold">Diagnostics:</p>
+                  <p>Server: {debugInfo.diagnostics.serverReachable ? '✅' : '❌'}</p>
+                  <p>Socket: {debugInfo.diagnostics.socketConnected ? '✅' : '❌'}</p>
+                  <p>Room: {debugInfo.diagnostics.roomJoined ? '✅' : '❌'}</p>
+                  <p>Media: {debugInfo.diagnostics.mediaGranted ? '✅' : '❌'}</p>
+                  <p>Peer: {debugInfo.diagnostics.peerConnected ? '✅' : '❌'}</p>
+                  <p>ICE: {debugInfo.diagnostics.iceConnected ? '✅' : '❌'}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* No Remote Stream Message */}
+        {['media_ready', 'ready'].includes(connectionState) && !remoteStream && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50">
+            <div className="text-center text-white">
+              <Users className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <p className="text-xl">Waiting for other participants...</p>
+              <p className="text-sm text-gray-400 mt-2">Share the room code to invite others</p>
+            </div>
           </div>
         )}
       </div>
-    </div>
 
- {/* 🎨 CSS para animaciones de escaneo */}
-    <style jsx>{`
-      @keyframes faceScan {
-        0% { top: 0; opacity: 1; }
-        50% { top: 50%; opacity: 0.8; }
-        100% { top: 100%; opacity: 0; }
-      }
-      
-      @keyframes handScan {
-        0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
-        50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
-        100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
-      }
-      
-      @keyframes progressBar {
-        0% { width: 0%; }
-        100% { width: 100%; }
-      }
-    `}</style>
-  </div>
-);
+      {/* 🎨 BARRA DE FUNCIONES MEJORADA */}
+      <div className="bg-gray-800 px-6 py-4">
+        <div className="flex items-center justify-center space-x-6">
+          {/* Controles de Audio/Video */}
+          <button
+            onClick={handleToggleAudio}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              isAudioEnabled 
+                ? 'bg-gray-600 hover:bg-gray-700 text-white' 
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+            title={isAudioEnabled ? 'Silenciar micrófono' : 'Activar micrófono'}
+          >
+            {isAudioEnabled ? (
+              <Mic className="h-6 w-6" />
+            ) : (
+              <MicOff className="h-6 w-6" />
+            )}
+          </button>
+
+          <button
+            onClick={handleToggleVideo}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              isVideoEnabled 
+                ? 'bg-gray-600 hover:bg-gray-700 text-white' 
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}
+            title={isVideoEnabled ? 'Apagar cámara' : 'Encender cámara'}
+          >
+            {isVideoEnabled ? (
+              <Video className="h-6 w-6" />
+            ) : (
+              <VideoOff className="h-6 w-6" />
+            )}
+          </button>
+
+          {/* Separador */}
+          <div className="h-8 w-px bg-gray-600"></div>
+
+          {/* 🎨 BOTONES DE ESCANEO */}
+          <button
+            onClick={handleFaceScan}
+            disabled={faceScanning}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              faceScanning 
+                ? 'bg-green-600 animate-pulse text-white' 
+                : 'bg-green-600 hover:bg-green-700 text-white hover:scale-105'
+            } disabled:opacity-75`}
+            title="Escanear rostro"
+          >
+            <Scan className="h-6 w-6" />
+          </button>
+
+          <button
+            onClick={handleHandScan}
+            disabled={handScanning}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              handScanning 
+                ? 'bg-blue-600 animate-pulse text-white' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
+            } disabled:opacity-75`}
+            title="Escanear mano"
+          >
+            <Fingerprint className="h-6 w-6" />
+          </button>
+
+          {/* Separador */}
+          <div className="h-8 w-px bg-gray-600"></div>
+
+          {/* Botón de Debug */}
+          <button
+            onClick={handleGetDebugInfo}
+            className="p-4 rounded-full bg-purple-600 hover:bg-purple-700 text-white transition-all duration-200 hover:scale-105"
+            title="Información de debug"
+          >
+            <Eye className="h-6 w-6" />
+          </button>
+
+          {/* Botón de Colgar */}
+          <button
+            onClick={handleEndCall}
+            className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 hover:scale-105"
+            title="Colgar llamada"
+          >
+            <Phone className="h-6 w-6 transform rotate-135" />
+          </button>
+        </div>
+
+        {/* Indicadores de Estado */}
+        <div className="flex items-center justify-center mt-3 space-x-4 text-sm text-gray-400">
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${
+              ['peer_connected', 'ready'].includes(connectionState) ? 'bg-green-500' : 'bg-red-500'
+            }`}></div>
+            <span>Conexión</span>
+          </div>
+          
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${
+              isGuest ? 'bg-blue-500' : 'bg-purple-500'
+            }`}></div>
+            <span>{isGuest ? 'Invitado' : 'Anfitrión'}</span>
+          </div>
+          
+          {(faceScanning || handScanning) && (
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+              <span>Escaneando...</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 🎨 CSS para animaciones de escaneo */}
+      <style jsx>{`
+        @keyframes faceScan {
+          0% { top: 0; opacity: 1; }
+          50% { top: 50%; opacity: 0.8; }
+          100% { top: 100%; opacity: 0; }
+        }
+        
+        @keyframes handScan {
+          0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+          50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
+          100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+        }
+        
+        @keyframes progressBar {
+          0% { width: 0%; }
+          100% { width: 100%; }
+        }
+      `}</style>
+    </div>
+  );
 };
+
 export default EnhancedWebRTCRoom;
