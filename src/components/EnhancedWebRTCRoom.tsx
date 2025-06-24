@@ -479,12 +479,12 @@ return (
         onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
       />
       
-      {/* 🎨 ANIMACIONES DE ESCANEO */}
+     {/* 🎨 ANIMACIONES DE ESCANEO */}
       {faceScanning && (
         <div className="absolute inset-0 pointer-events-none z-20">
           <div className="relative w-full h-full">
-            {/* Marco de escaneo facial */}
-            <div className="absolute inset-0 border-4 border-green-400 border-dashed animate-pulse">
+            {/* Marco de escaneo facial - Centrado mejor para evitar la barra */}
+            <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-green-400 border-dashed animate-pulse">
               <div 
                 className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
                 style={{
@@ -497,11 +497,11 @@ return (
               <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
               <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
             </div>
-            <div className="absolute inset-0 bg-green-400 bg-opacity-10" />
-            <div className="absolute top-4 left-4 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+            <div className="absolute inset-x-0 top-16 bottom-28 bg-green-400 bg-opacity-10" />
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
               🔍 Escaneando Rostro...
             </div>
-            <div className="absolute bottom-20 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+            <div className="absolute bottom-32 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
               <div className="text-green-400 text-sm mb-2">Análisis Facial en Progreso</div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
@@ -517,26 +517,27 @@ return (
       {handScanning && (
         <div className="absolute inset-0 pointer-events-none z-20">
           <div className="relative w-full h-full">
-            <div className="absolute inset-0 border-4 border-blue-400 border-dashed animate-pulse">
+            <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-blue-400 border-dashed animate-pulse">
               <div 
                 className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
                 style={{
                   animation: 'handScan 3s ease-in-out infinite',
-                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)'
+                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)',
+                  marginTop: '-20px' /* Subir un poco más el centro */
                 }}
               />
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" style={{ marginTop: '-20px' }}>
                 <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
                 <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
                 <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
                 <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
               </div>
             </div>
-            <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
-            <div className="absolute top-4 left-4 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
+            <div className="absolute inset-x-0 top-16 bottom-28 bg-blue-400 bg-opacity-10" />
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
               👋 Escaneando Mano...
             </div>
-            <div className="absolute bottom-20 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
+            <div className="absolute bottom-32 left-4 right-4 bg-gray-800 bg-opacity-75 rounded-lg p-3">
               <div className="text-blue-400 text-sm mb-2">Análisis Biométrico de Mano</div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
