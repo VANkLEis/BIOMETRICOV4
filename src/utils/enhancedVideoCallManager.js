@@ -480,7 +480,43 @@ this.socket.on('scan-notification', (data) => {
             throw error;
         }
     }
+// 🔧 ADDED: Enviar notificaciones de escaneo
+async sendScanNotification(notification) {
+    try {
+        if (!this.socket || !this.socket.connected) {
+            throw new Error('Not connected to signaling server');
+        }
 
+        if (!this.roomId) {
+            throw new Error('Not in a room');
+        }
+
+        if (!notification || !notification.type || !notification.message) {
+            throw new Error('Invalid notification format');
+        }
+
+        this._log(`📢 Sending scan notification: ${notification.type} - ${notification.message}`);
+
+        const notificationData = {
+            roomId: this.roomId,
+            from: this.socket.id,
+            fromName: this.userName,
+            type: notification.type,
+            message: notification.message,
+            duration: notification.duration || 3000,
+            timestamp: Date.now()
+        };
+
+        this.socket.emit('scan-notification', notificationData);
+        this._log('✅ Scan notification sent successfully');
+
+        return true;
+
+    } catch (error) {
+        this._log(`❌ Failed to send scan notification: ${error.message}`, 'error');
+        throw error;
+    }
+}
     // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
