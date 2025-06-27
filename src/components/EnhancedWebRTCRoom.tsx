@@ -231,13 +231,14 @@ const handleForceLocalVideo = useCallback(() => {
         console.log(`🎭 ENHANCED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
         // Configurar callbacks
-        const callbacks = {
-          onLocalStream: handleLocalStream,
-          onRemoteStream: handleRemoteStream,
-          onStateChange: handleStateChange,
-          onParticipantsChange: handleParticipantsChange,
-          onError: handleError
-        };
+     const callbacks = {
+ onLocalStream: handleLocalStream,
+ onRemoteStream: handleRemoteStream,
+ onStateChange: handleStateChange,
+ onParticipantsChange: handleParticipantsChange,
+ onError: handleError,
+ onScanNotification: handleScanNotification // <- AGREGAR ESTA LÍNEA
+};
         
         // Inicializar Enhanced VideoCallManager
         const manager = await initializeEnhancedVideoCall(roomId, userName, isHost, callbacks);
