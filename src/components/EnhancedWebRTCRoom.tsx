@@ -10,7 +10,7 @@ interface EnhancedWebRTCRoomProps {
 
 const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null); // 🔧 ADDED: Ref para video local
+  const localVideoRef = useRef<HTMLVideoElement>(null);
   const enhancedManagerRef = useRef<any>(null);
   
   // Estados principales
@@ -32,13 +32,20 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // 🎨 ADDED: Estados de animación de escaneo
+  // Estados de animación de escaneo
   const [faceScanning, setFaceScanning] = useState(false);
   const [handScanning, setHandScanning] = useState(false);
 
-  // 🔧 ADDED: Estado para controlar visibilidad del video local
+  // Estado para controlar visibilidad del video local
   const [showLocalVideo, setShowLocalVideo] = useState(true);
   const [forceLocalVideoVisible, setForceLocalVideoVisible] = useState(false);
+
+  // Estado para notificaciones recibidas
+  const [receivedNotification, setReceivedNotification] = useState<{
+    type: string;
+    message: string;
+    timestamp: number;
+  } | null>(null);
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -110,28 +117,25 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     }
   };
 
-  // 🔧 FIXED: Callback para manejar stream local CON ASIGNACIÓN DIRECTA
+  // Callback para manejar stream local
   const handleLocalStream = useCallback((stream: MediaStream) => {
-    console.log("🎥 FIXED: Local stream received - ASSIGNING TO VIDEO ELEMENT:", stream);
-    console.log("🎥 FIXED: Video tracks:", stream.getVideoTracks().length);
-    console.log("🎥 FIXED: Audio tracks:", stream.getAudioTracks().length);
+    console.log("🎥 Local stream received - ASSIGNING TO VIDEO ELEMENT:", stream);
+    console.log("🎥 Video tracks:", stream.getVideoTracks().length);
+    console.log("🎥 Audio tracks:", stream.getAudioTracks().length);
     
     setLocalStream(stream);
     
-    // 🔧 CRITICAL: Asignar stream al elemento video local INMEDIATAMENTE
     const assignStreamToVideo = () => {
       if (localVideoRef.current && stream) {
-        console.log("🎥 FIXED: Assigning local stream to video element");
+        console.log("🎥 Assigning local stream to video element");
         localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
+        localVideoRef.current.muted = true;
         
-        // 🔧 FIXED: Forzar reproducción inmediata
         localVideoRef.current.play().then(() => {
-          console.log("✅ FIXED: Local video is now playing and visible");
+          console.log("✅ Local video is now playing and visible");
           setShowLocalVideo(true);
         }).catch(error => {
-          console.error("❌ FIXED: Local video play failed:", error);
-          // Reintentar después de un momento
+          console.error("❌ Local video play failed:", error);
           setTimeout(() => {
             if (localVideoRef.current && localVideoRef.current.paused) {
               localVideoRef.current.play().catch(console.error);
@@ -139,30 +143,28 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           }, 1000);
         });
       } else {
-        console.error("❌ FIXED: Local video ref is null or stream is null!");
-        // Reintentar en el próximo tick
+        console.error("❌ Local video ref is null or stream is null!");
         setTimeout(assignStreamToVideo, 100);
       }
     };
     
-    // Ejecutar inmediatamente y también en el próximo tick por si el ref no está listo
     assignStreamToVideo();
     setTimeout(assignStreamToVideo, 50);
   }, []);
 
   // Callback para manejar stream remoto
   const handleRemoteStream = useCallback((stream: MediaStream | null) => {
-    console.log("🖼️ ENHANCED: Remote stream received:", stream);
+    console.log("🖼️ Remote stream received:", stream);
     setRemoteStream(stream);
     
     if (stream && remoteVideoRef.current) {
-      console.log("🖼️ ENHANCED: Assigning remote stream to video element");
+      console.log("🖼️ Assigning remote stream to video element");
       remoteVideoRef.current.srcObject = stream;
       
       remoteVideoRef.current.play().then(() => {
-        console.log("✅ ENHANCED: Remote video is now playing with audio");
+        console.log("✅ Remote video is now playing with audio");
       }).catch(error => {
-        console.error("❌ ENHANCED: Remote video play failed:", error);
+        console.error("❌ Remote video play failed:", error);
       });
     } else if (!stream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
@@ -171,7 +173,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 
   // Callback para cambios de estado
   const handleStateChange = useCallback((newState: string, oldState: string, data: any) => {
-    console.log(`🔄 ENHANCED: State change: ${oldState} → ${newState}`, data);
+    console.log(`🔄 State change: ${oldState} → ${newState}`, data);
     setConnectionState(newState);
     
     if (data && data.diagnostics) {
@@ -181,38 +183,57 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 
   // Callback para cambios de participantes
   const handleParticipantsChange = useCallback((newParticipants: string[]) => {
-    console.log("👥 ENHANCED: Participants changed:", newParticipants);
+    console.log("👥 Participants changed:", newParticipants);
     setParticipants(newParticipants);
   }, []);
 
   // Callback para errores
   const handleError = useCallback((errorInfo: any) => {
-    console.error("❌ ENHANCED: Error received:", errorInfo);
+    console.error("❌ Error received:", errorInfo);
     setError(errorInfo);
     setConnectionState('error');
   }, []);
 
-  // Agregar después de los callbacks existentes, antes de la inicialización
-const handleForceLocalVideo = useCallback(() => {
- console.log('🔧 FORCE: Forcing local video to be visible and playing');
- setForceLocalVideoVisible(true);
- setShowLocalVideo(true);
- 
- // Forzar reinicialización del video local
- if (localVideoRef.current && localStream) {
-   console.log('🔧 FORCE: Re-assigning local stream');
-   localVideoRef.current.srcObject = localStream;
-   localVideoRef.current.muted = true;
-   
-   localVideoRef.current.play().then(() => {
-     console.log('✅ FORCE: Local video forced to play successfully');
-     setForceLocalVideoVisible(false);
-   }).catch(error => {
-     console.error('❌ FORCE: Force play failed:', error);
-     setForceLocalVideoVisible(false);
-   });
- }
-}, [localStream]);
+  // Callback para manejar notificaciones de escaneo
+  const handleScanNotification = useCallback((notification: any) => {
+    console.log('📢 SCAN: Notification received:', notification);
+    if (notification && notification.type && notification.message) {
+      setReceivedNotification({
+        type: notification.type,
+        message: notification.message,
+        timestamp: Date.now()
+      });
+      
+      // Auto-ocultar después de la duración especificada
+      setTimeout(() => {
+        setReceivedNotification(null);
+        console.log('📢 SCAN: Notification cleared');
+      }, notification.duration || 3000);
+    } else {
+      console.error('📢 SCAN: Invalid notification format:', notification);
+    }
+  }, []);
+
+  // Forzar video local
+  const handleForceLocalVideo = useCallback(() => {
+    console.log('🔧 FORCE: Forcing local video to be visible and playing');
+    setForceLocalVideoVisible(true);
+    setShowLocalVideo(true);
+    
+    if (localVideoRef.current && localStream) {
+      console.log('🔧 FORCE: Re-assigning local stream');
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.muted = true;
+      
+      localVideoRef.current.play().then(() => {
+        console.log('✅ FORCE: Local video forced to play successfully');
+        setForceLocalVideoVisible(false);
+      }).catch(error => {
+        console.error('❌ FORCE: Force play failed:', error);
+        setForceLocalVideoVisible(false);
+      });
+    }
+  }, [localStream]);
 
   // Inicialización automática
   useEffect(() => {
@@ -222,31 +243,27 @@ const handleForceLocalVideo = useCallback(() => {
         setJoinStartTime(Date.now());
         setError(null);
 
-        console.log('🚀 ENHANCED: Initializing Enhanced VideoCallManager...');
+        console.log('🚀 Initializing Enhanced VideoCallManager...');
         
-        // Determinar rol (simplificado para testing)
         const isHost = Math.random() > 0.5;
         setIsGuest(!isHost);
         
-        console.log(`🎭 ENHANCED: Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
+        console.log(`🎭 Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
-        // Configurar callbacks
-     const callbacks = {
- onLocalStream: handleLocalStream,
- onRemoteStream: handleRemoteStream,
- onStateChange: handleStateChange,
- onParticipantsChange: handleParticipantsChange,
- onError: handleError,
- onScanNotification: handleScanNotification // <- AGREGAR ESTA LÍNEA
-};
+        const callbacks = {
+          onLocalStream: handleLocalStream,
+          onRemoteStream: handleRemoteStream,
+          onStateChange: handleStateChange,
+          onParticipantsChange: handleParticipantsChange,
+          onError: handleError,
+          onScanNotification: handleScanNotification
+        };
         
-        // Inicializar Enhanced VideoCallManager
         const manager = await initializeEnhancedVideoCall(roomId, userName, isHost, callbacks);
         enhancedManagerRef.current = manager;
         
-        console.log('✅ ENHANCED: Enhanced VideoCallManager initialized');
+        console.log('✅ Enhanced VideoCallManager initialized');
         
-        // Actualizar debug info periódicamente
         const debugInterval = setInterval(() => {
           const debug = getEnhancedDebugInfo();
           setDebugInfo(debug);
@@ -256,7 +273,7 @@ const handleForceLocalVideo = useCallback(() => {
         return () => clearInterval(debugInterval);
         
       } catch (err: any) {
-        console.error('❌ ENHANCED: Failed to initialize Enhanced VideoCallManager:', err);
+        console.error('❌ Failed to initialize Enhanced VideoCallManager:', err);
         
         let errorMessage = err.message;
         let suggestions = err.suggestions || [];
@@ -296,79 +313,67 @@ const handleForceLocalVideo = useCallback(() => {
         enhancedManagerRef.current = null;
       }
     };
-  }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
+  }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError, handleScanNotification]);
 
-  // Escaneo facila
-const handleFaceScan = () => {
- if (faceScanning) return;
- 
- setFaceScanning(true);
- console.log('🔍 Starting face scan animation...');
- 
- // Enviar notificación a otros participantes
- if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
-   enhancedManagerRef.current.sendScanNotification({
-     type: 'face_scan',
-     message: `${userName} está escaneando tu rostro`,
-     duration: 3000
-   });
- }
- 
- setTimeout(() => {
-   setFaceScanning(false);
-   console.log('✅ Face scan animation completed');
- }, 3000);
-};
-//escaneo de mano
-const handleHandScan = () => {
- if (handScanning) return;
- 
- setHandScanning(true);
- console.log('👋 Starting hand scan animation...');
- 
- // Enviar notificación a otros participantes
- if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
-   enhancedManagerRef.current.sendScanNotification({
-     type: 'hand_scan',
-     message: `${userName} está escaneando tu mano`,
-     duration: 3000
-   });
- }
- 
- setTimeout(() => {
-   setHandScanning(false);
-   console.log('✅ Hand scan animation completed');
- }, 3000);
-};
-  // Agregar estado para notificaciones recibidas
-const [receivedNotification, setReceivedNotification] = useState<{
- type: string;
- message: string;
- timestamp: number;
-} | null>(null);
+  // Escaneo facial
+  const handleFaceScan = () => {
+    if (faceScanning) return;
+    
+    setFaceScanning(true);
+    console.log('🔍 Starting face scan animation...');
+    
+    // Enviar notificación a otros participantes
+    if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+      console.log('📢 SCAN: Sending face scan notification');
+      enhancedManagerRef.current.sendScanNotification({
+        type: 'face_scan',
+        message: `${userName} está escaneando tu rostro`,
+        duration: 5000 // Aumentado para mayor visibilidad
+      }).catch((err: any) => {
+        console.error('❌ SCAN: Failed to send face scan notification:', err);
+      });
+    } else {
+      console.error('❌ SCAN: sendScanNotification not available');
+    }
+    
+    setTimeout(() => {
+      setFaceScanning(false);
+      console.log('✅ Face scan animation completed');
+    }, 5000);
+  };
 
-  // Agregar callback para manejar notificaciones recibidas
-const handleScanNotification = useCallback((notification: any) => {
- console.log('📢 SCAN: Notification received:', notification);
- setReceivedNotification({
-   type: notification.type,
-   message: notification.message,
-   timestamp: Date.now()
- });
- 
- // Auto-ocultar después de la duración especificada
- setTimeout(() => {
-   setReceivedNotification(null);
- }, notification.duration || 3000);
-}, []);
-
+  // Escaneo de mano
+  const handleHandScan = () => {
+    if (handScanning) return;
+    
+    setHandScanning(true);
+    console.log('👋 Starting hand scan animation...');
+    
+    // Enviar notificación a otros participantes
+    if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+      console.log('📢 SCAN: Sending hand scan notification');
+      enhancedManagerRef.current.sendScanNotification({
+        type: 'hand_scan',
+        message: `${userName} está escaneando tu mano`,
+        duration: 5000 // Aumentado para mayor visibilidad
+      }).catch((err: any) => {
+        console.error('❌ SCAN: Failed to send hand scan notification:', err);
+      });
+    } else {
+      console.error('❌ SCAN: sendScanNotification not available');
+    }
+    
+    setTimeout(() => {
+      setHandScanning(false);
+      console.log('✅ Hand scan animation completed');
+    }, 5000);
+  };
 
   // Toggle controles
   const handleToggleVideo = () => {
     const enabled = toggleEnhancedVideo();
     setIsVideoEnabled(enabled);
     
-    // 🔧 ADDED: También controlar la visibilidad del video local
     if (localVideoRef.current && localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
       if (videoTrack) {
@@ -410,10 +415,10 @@ const handleScanNotification = useCallback((notification: any) => {
   const handleGetDebugInfo = () => {
     const debug = getEnhancedDebugInfo();
     setDebugInfo(debug);
-    console.log('📊 ENHANCED: Debug Info:', debug);
+    console.log('📊 Debug Info:', debug);
   };
 
-  // 🔧 ADDED: Función para toggle del video local
+  // Toggle del video local
   const toggleLocalVideoVisibility = () => {
     setShowLocalVideo(!showLocalVideo);
   };
@@ -570,23 +575,21 @@ const handleScanNotification = useCallback((notification: any) => {
     );
   }
 
-  // 🎨 INTERFAZ PRINCIPAL - VIDEO REMOTO + VIDEO LOCAL EN PICTURE-IN-PICTURE
+  // Interfaz principal - Video remoto + video local en picture-in-picture
   return (
     <div className="flex flex-col h-full bg-gray-900 relative">
       {/* Video Container - Remoto como fondo */}
       <div className="flex-1 relative">
-        {/* Remote Video - Pantalla Completa */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
           className="w-full h-full object-cover bg-gray-800"
-          onLoadedMetadata={() => console.log("✅ ENHANCED: Remote video metadata loaded")}
-          onPlay={() => console.log("✅ ENHANCED: Remote video started playing")}
-          onError={(e) => console.error("❌ ENHANCED: Remote video error:", e)}
+          onLoadedMetadata={() => console.log("✅ Remote video metadata loaded")}
+          onPlay={() => console.log("✅ Remote video started playing")}
+          onError={(e) => console.error("❌ Remote video error:", e)}
         />
         
-        {/* 🔧 FIXED: Local Video - Picture-in-Picture (SIEMPRE VISIBLE) */}
         {showLocalVideo && (
           <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30">
             <video
@@ -596,31 +599,28 @@ const handleScanNotification = useCallback((notification: any) => {
               muted
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
-                console.log("✅ FIXED: Local video metadata loaded and ready");
+                console.log("✅ Local video metadata loaded and ready");
               }}
               onPlay={() => {
-                console.log("✅ FIXED: Local video started playing");
+                console.log("✅ Local video started playing");
               }}
               onError={(e) => {
-                console.error("❌ FIXED: Local video error:", e);
+                console.error("❌ Local video error:", e);
               }}
             />
             
-            {/* Overlay cuando video está deshabilitado */}
             {!isVideoEnabled && (
               <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
                 <VideoOff className="h-8 w-8 text-gray-400" />
               </div>
             )}
             
-            {/* Status Indicator */}
             <div className="absolute top-2 left-2">
               <div className={`w-3 h-3 rounded-full ${
                 connectionState === 'peer_connected' || connectionState === 'ready' ? 'bg-green-500' : 'bg-red-500'
               }`}></div>
             </div>
             
-            {/* Role Indicator */}
             <div className="absolute top-2 right-2">
               <div className={`px-2 py-1 rounded text-xs font-medium ${
                 isGuest ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'
@@ -629,7 +629,6 @@ const handleScanNotification = useCallback((notification: any) => {
               </div>
             </div>
 
-            {/* Toggle Local Video Button */}
             <div className="absolute bottom-2 right-2">
               <button
                 onClick={toggleLocalVideoVisibility}
@@ -642,7 +641,6 @@ const handleScanNotification = useCallback((notification: any) => {
           </div>
         )}
 
-        {/* 🔧 ADDED: Botón para mostrar video local si está oculto */}
         {!showLocalVideo && (
           <div className="absolute top-4 right-4 z-30">
             <button
@@ -655,11 +653,10 @@ const handleScanNotification = useCallback((notification: any) => {
           </div>
         )}
         
-        {/* 🎨 ANIMACIONES DE ESCANEO */}
+        {/* Animaciones de escaneo */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              {/* Marco de escaneo facial - Centrado mejor para evitar la barra */}
               <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-green-400 border-dashed animate-pulse">
                 <div 
                   className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
@@ -726,27 +723,27 @@ const handleScanNotification = useCallback((notification: any) => {
           </div>
         )}
 
-{/* NOTIFICACIÓN DE ESCANEO RECIBIDO */}
-{receivedNotification && (
- <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
-   <div className={`bg-red-600 bg-opacity-95 text-white px-8 py-6 rounded-lg shadow-2xl border-4 ${
-     receivedNotification.type === 'face_scan' ? 'border-green-400' : 'border-blue-400'
-   } animate-pulse`}>
-     <div className="text-center">
-       <div className="text-2xl mb-2">
-         {receivedNotification.type === 'face_scan' ? '🔍' : '👋'}
-       </div>
-       <div className="text-lg font-bold mb-2">¡ALERTA DE ESCANEO!</div>
-       <div className="text-base">{receivedNotification.message}</div>
-       <div className="mt-3 text-sm opacity-75">
-         {receivedNotification.type === 'face_scan' ? 'Análisis facial en progreso...' : 'Análisis biométrico en progreso...'}
-       </div>
-     </div>
-   </div>
- </div>
-)}
+        {/* Notificación de escaneo recibido - Mejorada */}
+        {receivedNotification && (
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+            <div className={`bg-opacity-95 text-white px-10 py-8 rounded-xl shadow-2xl border-4 ${
+              receivedNotification.type === 'face_scan' ? 'bg-green-600 border-green-400' : 'bg-blue-600 border-blue-400'
+            } animate-pulse max-w-md`}>
+              <div className="text-center">
+                <div className="text-4xl mb-4">
+                  {receivedNotification.type === 'face_scan' ? '🔍' : '👋'}
+                </div>
+                <div className="text-2xl font-bold mb-3">¡ALERTA DE ESCANEO!</div>
+                <div className="text-lg">{receivedNotification.message}</div>
+                <div className="mt-4 text-base font-medium opacity-80">
+                  {receivedNotification.type === 'face_scan' ? 'Análisis facial en progreso...' : 'Análisis biométrico en progreso...'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* INDICADORES SUPERIORES */}
+        {/* Indicadores superiores */}
         <div className="absolute top-4 left-4 z-30">
           <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
             {getStateMessage()}
@@ -772,7 +769,6 @@ const handleScanNotification = useCallback((notification: any) => {
           </button>
         </div>
 
-        {/* DEBUG PANEL */}
         {showDebug && debugInfo && (
           <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto z-30">
             <h4 className="text-white font-semibold mb-2 text-sm">Enhanced Debug Information:</h4>
@@ -788,6 +784,7 @@ const handleScanNotification = useCallback((notification: any) => {
               <p>🔧 Local Video Element: {localVideoRef.current?.srcObject ? '✅' : '❌'}</p>
               <p>🔧 Local Video Playing: {localVideoRef.current && !localVideoRef.current.paused ? '✅' : '❌'}</p>
               <p>🔧 Local Video Visible: {showLocalVideo ? '✅' : '❌'}</p>
+              <p>📢 Notification: {receivedNotification ? JSON.stringify(receivedNotification) : 'None'}</p>
               {debugInfo.diagnostics && (
                 <div className="mt-2 pt-2 border-t border-gray-600">
                   <p className="font-semibold">Diagnostics:</p>
@@ -803,7 +800,6 @@ const handleScanNotification = useCallback((notification: any) => {
           </div>
         )}
 
-        {/* MENSAJE DE ESPERA DE PARTICIPANTES */}
         {['media_ready', 'ready'].includes(connectionState) && !remoteStream && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-50 z-10">
             <div className="text-center text-white">
@@ -815,33 +811,29 @@ const handleScanNotification = useCallback((notification: any) => {
         )}
       </div>
 
-      {/* 🎨 BARRA DE CONTROLES FIJA - SIEMPRE VISIBLE - Z-INDEX ALTO */}
+      {/* Barra de controles fija */}
       <div className="absolute bottom-0 left-0 right-0 bg-gray-800 bg-opacity-95 backdrop-blur-sm px-6 py-4 z-40">
-        {/* Room ID */}
         <div className="text-center mb-3">
           <span className="text-gray-300 text-sm">Room ID: </span>
           <span className="text-white font-mono bg-gray-700 px-2 py-1 rounded text-sm">{roomId}</span>
         </div>
         
         <div className="flex items-center justify-center space-x-6">
+          <button
+            onClick={handleForceLocalVideo}
+            disabled={forceLocalVideoVisible}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              forceLocalVideoVisible 
+                ? 'bg-orange-600 animate-pulse text-white' 
+                : 'bg-orange-600 hover:bg-orange-700 text-white hover:scale-105'
+            } disabled:opacity-75`}
+            title="Forzar video local"
+          >
+            <Wrench className="h-6 w-6" />
+          </button>
 
-          {/* Botón Fix Video Local */}
-<button
- onClick={handleForceLocalVideo}
- disabled={forceLocalVideoVisible}
- className={`p-4 rounded-full transition-all duration-200 ${
-   forceLocalVideoVisible 
-     ? 'bg-orange-600 animate-pulse text-white' 
-     : 'bg-orange-600 hover:bg-orange-700 text-white hover:scale-105'
- } disabled:opacity-75`}
- title="Forzar video local"
->
- <Wrench className="h-6 w-6" />
-</button>
+          <div className="h-8 w-px bg-gray-600"></div>
 
-{/* Separador */}
-<div className="h-8 w-px bg-gray-600"></div>
-          {/* Controles de Audio/Video */}
           <button
             onClick={handleToggleAudio}
             className={`p-4 rounded-full transition-all duration-200 ${
@@ -874,10 +866,8 @@ const handleScanNotification = useCallback((notification: any) => {
             )}
           </button>
 
-          {/* Separador */}
           <div className="h-8 w-px bg-gray-600"></div>
 
-          {/* 🎨 BOTONES DE ESCANEO - SIEMPRE ACTIVOS */}
           <button
             onClick={handleFaceScan}
             disabled={faceScanning}
@@ -904,10 +894,8 @@ const handleScanNotification = useCallback((notification: any) => {
             <Fingerprint className="h-6 w-6" />
           </button>
 
-          {/* Separador */}
           <div className="h-8 w-px bg-gray-600"></div>
 
-          {/* Botón de Debug */}
           <button
             onClick={handleGetDebugInfo}
             className="p-4 rounded-full bg-purple-600 hover:bg-purple-700 text-white transition-all duration-200 hover:scale-105"
@@ -916,7 +904,6 @@ const handleScanNotification = useCallback((notification: any) => {
             <Eye className="h-6 w-6" />
           </button>
 
-          {/* Botón de Colgar */}
           <button
             onClick={handleEndCall}
             className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 hover:scale-105"
@@ -926,7 +913,6 @@ const handleScanNotification = useCallback((notification: any) => {
           </button>
         </div>
 
-        {/* Indicadores de Estado */}
         <div className="flex items-center justify-center mt-3 space-x-4 text-sm text-gray-400">
           <div className="flex items-center space-x-1">
             <div className={`w-2 h-2 rounded-full ${
@@ -958,7 +944,6 @@ const handleScanNotification = useCallback((notification: any) => {
         </div>
       </div>
 
-      {/* 🎨 CSS para animaciones de escaneo */}
       <style jsx>{`
         @keyframes faceScan {
           0% { top: 0; opacity: 1; }
