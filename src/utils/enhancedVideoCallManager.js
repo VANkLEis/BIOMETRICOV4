@@ -9,9 +9,10 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
+ * 8. ✅ FIXED: Sistema de notificaciones de escaneo bidireccional
  * 
  * @author SecureCall Team
- * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
+ * @version 7.1.0 - SCAN NOTIFICATIONS FULLY WORKING
  */
 
 import { io } from 'socket.io-client';
@@ -27,15 +28,15 @@ class EnhancedVideoCallManager {
         this.userName = null;
         this.connectionState = 'idle';
         
-   // 🔧 CRITICAL: Callbacks para UI
-this.callbacks = {
-    onLocalStream: null,
-    onRemoteStream: null,
-    onStateChange: null,
-    onParticipantsChange: null,
-    onError: null,
-    onScanNotification: null
-};
+        // 🔧 CRITICAL: Callbacks para UI
+        this.callbacks = {
+            onLocalStream: null,
+            onRemoteStream: null,
+            onStateChange: null,
+            onParticipantsChange: null,
+            onError: null,
+            onScanNotification: null // 🔧 FIXED: Callback para notificaciones de escaneo
+        };
         
         // 🔧 FIXED: Configuración mejorada para guests
         this.config = {
@@ -399,20 +400,28 @@ this.callbacks = {
                 await this._handleIceCandidate(data.candidate);
             }
         });
-      // 🔧 ADDED: Eventos de notificaciones de escaneo
-this.socket.on('scan-notification', (data) => {
-    this._log(`📢 Received scan notification: ${data.type} - ${data.message}`);
-    
-    if (this.callbacks.onScanNotification) {
-        this.callbacks.onScanNotification({
-            type: data.type,
-            message: data.message,
-            duration: data.duration || 3000,
-            from: data.from,
-            timestamp: data.timestamp || Date.now()
+
+        // 🔧 FIXED: Eventos de notificaciones de escaneo
+        this.socket.on('scan-notification', (data) => {
+            this._log(`📢 SCAN: Received scan notification from ${data.fromName}: ${data.type} - ${data.message}`);
+            
+            // 🔧 CRITICAL: Verificar que no sea nuestra propia notificación
+            if (data.from !== this.socket.id && this.callbacks.onScanNotification) {
+                this._log(`📢 SCAN: Processing notification for UI display`);
+                this.callbacks.onScanNotification({
+                    type: data.type,
+                    message: data.message,
+                    duration: data.duration || 5000,
+                    from: data.from,
+                    fromName: data.fromName,
+                    timestamp: data.timestamp || Date.now()
+                });
+            } else if (data.from === this.socket.id) {
+                this._log(`📢 SCAN: Ignoring own notification`);
+            } else {
+                this._log(`📢 SCAN: No callback configured for scan notifications`, 'warn');
+            }
         });
-    }
-});
 
         // Heartbeat
         this.socket.on('heartbeat-ack', () => {
@@ -480,43 +489,55 @@ this.socket.on('scan-notification', (data) => {
             throw error;
         }
     }
-// 🔧 ADDED: Enviar notificaciones de escaneo
-async sendScanNotification(notification) {
-    try {
-        if (!this.socket || !this.socket.connected) {
-            throw new Error('Not connected to signaling server');
+
+    // 🔧 FIXED: Enviar notificaciones de escaneo con validación mejorada
+    async sendScanNotification(notification) {
+        try {
+            this._log(`📢 SCAN: Attempting to send scan notification: ${notification.type}`);
+
+            // 🔧 FIXED: Validaciones más robustas
+            if (!this.socket || !this.socket.connected) {
+                throw new Error('Not connected to signaling server');
+            }
+
+            if (!this.roomId) {
+                throw new Error('Not in a room');
+            }
+
+            if (!notification || !notification.type || !notification.message) {
+                throw new Error('Invalid notification format - missing type or message');
+            }
+
+            // 🔧 FIXED: Verificar que hay otros participantes
+            if (this.participants.length <= 1) {
+                this._log('📢 SCAN: No other participants to notify', 'warn');
+                return false;
+            }
+
+            this._log(`📢 SCAN: Sending ${notification.type} notification to ${this.participants.length - 1} participants`);
+
+            const notificationData = {
+                roomId: this.roomId,
+                from: this.socket.id,
+                fromName: this.userName,
+                type: notification.type,
+                message: notification.message,
+                duration: notification.duration || 5000,
+                timestamp: Date.now()
+            };
+
+            // 🔧 FIXED: Emitir evento con datos completos
+            this.socket.emit('scan-notification', notificationData);
+            this._log('✅ SCAN: Notification sent successfully');
+
+            return true;
+
+        } catch (error) {
+            this._log(`❌ SCAN: Failed to send scan notification: ${error.message}`, 'error');
+            throw error;
         }
-
-        if (!this.roomId) {
-            throw new Error('Not in a room');
-        }
-
-        if (!notification || !notification.type || !notification.message) {
-            throw new Error('Invalid notification format');
-        }
-
-        this._log(`📢 Sending scan notification: ${notification.type} - ${notification.message}`);
-
-        const notificationData = {
-            roomId: this.roomId,
-            from: this.socket.id,
-            fromName: this.userName,
-            type: notification.type,
-            message: notification.message,
-            duration: notification.duration || 3000,
-            timestamp: Date.now()
-        };
-
-        this.socket.emit('scan-notification', notificationData);
-        this._log('✅ Scan notification sent successfully');
-
-        return true;
-
-    } catch (error) {
-        this._log(`❌ Failed to send scan notification: ${error.message}`, 'error');
-        throw error;
     }
-}
+
     // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
@@ -885,7 +906,8 @@ async sendScanNotification(notification) {
             diagnostics: this.diagnostics,
             lastError: this.lastError,
             mediaReady: this.mediaReady,
-            serverUrl: this._getServerUrl()
+            serverUrl: this._getServerUrl(),
+            scanNotificationCallback: !!this.callbacks.onScanNotification
         };
     }
 
