@@ -339,6 +339,12 @@ const handleHandScan = () => {
    console.log('✅ Hand scan animation completed');
  }, 3000);
 };
+  // Agregar estado para notificaciones recibidas
+const [receivedNotification, setReceivedNotification] = useState<{
+ type: string;
+ message: string;
+ timestamp: number;
+} | null>(null);
 
 
   // Toggle controles
