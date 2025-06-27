@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Video, UserPlus, Copy, Check, LogOut } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import Logo from '../components/Logo';
 
@@ -51,7 +50,7 @@ const Dashboard: React.FC = () => {
                 onClick={handleLogout}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100"
               >
-                <LogOut className="h-4 w-4 mr-2" />
+                <Logo className="h-4 w-4 mr-2" />
                 Logout
               </button>
             </div>
@@ -68,7 +67,7 @@ const Dashboard: React.FC = () => {
               <div className="rounded-md bg-blue-50 p-4 mb-6">
                 <div className="flex">
                   <div className="flex-shrink-0">
-                    <Video className="h-5 w-5 text-blue-400" />
+                    <Logo className="h-5 w-5 text-blue-400" />
                   </div>
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-blue-800">Secure Video Calls</h3>
@@ -85,7 +84,7 @@ const Dashboard: React.FC = () => {
                     onClick={createNewCall}
                     className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    <Video className="h-5 w-5 mr-2" />
+                    <Logo className="h-5 w-5 mr-2" />
                     Start a New Video Call
                   </button>
                 </div>
@@ -149,7 +148,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => copyRoomCode(generateRoomId())}
                         className="inline-flex items-center p-2 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
-                        {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                        <Logo className="h-5 w-5" />
                       </button>
                     </div>
                   </div>
@@ -161,11 +160,11 @@ const Dashboard: React.FC = () => {
                     onClick={() => setShowInvite(!showInvite)}
                     className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    <UserPlus className="h-4 w-4 mr-2" />
+                    <Logo className="h-4 w-4 mr-2" />
                     Generate Room Code
                   </button>
                 </div>
-              </div>
+              </legd>
             </div>
           </div>
         </div>
