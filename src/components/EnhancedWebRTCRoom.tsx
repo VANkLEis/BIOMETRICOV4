@@ -887,33 +887,38 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 
           <div className="h-8 w-px bg-gray-600"></div>
 
-          <button
-            onClick={handleFaceScan}
-            disabled={faceScanning}
-            className={`p-4 rounded-full transition-all duration-200 ${
-              faceScanning 
-                ? 'bg-green-600 animate-pulse text-white' 
-                : 'bg-green-600 hover:bg-green-700 text-white hover:scale-105'
-            } disabled:opacity-75`}
-            title="Escanear rostro"
-          >
-            <Scan className="h-6 w-6" />
-          </button>
+         {/* Botones de escaneo - SOLO PARA HOST */}
+{!isGuest && (
+  <>
+    <button
+      onClick={handleFaceScan}
+      disabled={faceScanning}
+      className={`p-4 rounded-full transition-all duration-200 ${
+        faceScanning 
+          ? 'bg-green-600 animate-pulse text-white' 
+          : 'bg-green-600 hover:bg-green-700 text-white hover:scale-105'
+      } disabled:opacity-75`}
+      title="Escanear rostro"
+    >
+      <Scan className="h-6 w-6" />
+    </button>
 
-          <button
-            onClick={handleHandScan}
-            disabled={handScanning}
-            className={`p-4 rounded-full transition-all duration-200 ${
-              handScanning 
-                ? 'bg-blue-600 animate-pulse text-white' 
-                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
-            } disabled:opacity-75`}
-            title="Escanear mano"
-          >
-            <Fingerprint className="h-6 w-6" />
-          </button>
+    <button
+      onClick={handleHandScan}
+      disabled={handScanning}
+      className={`p-4 rounded-full transition-all duration-200 ${
+        handScanning 
+          ? 'bg-blue-600 animate-pulse text-white' 
+          : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105'
+      } disabled:opacity-75`}
+      title="Escanear mano"
+    >
+      <Fingerprint className="h-6 w-6" />
+    </button>
+  </>
+)}
 
-          <div className="h-8 w-px bg-gray-600"></div>
+<div className="h-8 w-px bg-gray-600"></div>
 
           <button
             onClick={handleGetDebugInfo}
