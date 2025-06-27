@@ -116,7 +116,14 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     console.log("🎥 FIXED: Audio tracks:", stream.getAudioTracks().length);
     
     setLocalStream(stream);
-    
+    // Agregar al final de los estados existentes
+const [forceLocalVideoVisible, setForceLocalVideoVisible] = useState(false);
+
+// Agregar después de los callbacks existentes, antes de la inicialización
+const handleForceLocalVideo = useCallback(() => {
+ console.log('🔧 FORCE: Forcing local video to be visible and playing');
+ setForceLocalVideoVisible(true);
+ setShowLocalVideo(true);
     // 🔧 CRITICAL: Asignar stream al elemento video local INMEDIATAMENTE
     const assignStreamToVideo = () => {
       if (localVideoRef.current && stream) {
