@@ -250,14 +250,14 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         
         console.log(`🎭 Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
-        const callbacks = {
-          onLocalStream: handleLocalStream,
-          onRemoteStream: handleRemoteStream,
-          onStateChange: handleStateChange,
-          onParticipantsChange: handleParticipantsChange,
-          onError: handleError,
-          onScanNotification: handleScanNotification
-        };
+      const callbacks = {
+    onLocalStream: handleLocalStream,
+    onRemoteStream: handleRemoteStream,
+    onStateChange: handleStateChange,
+    onParticipantsChange: handleParticipantsChange,
+    onError: handleError,
+    onScanNotification: handleScanNotification  // Tu callback existente
+};
         
         const manager = await initializeEnhancedVideoCall(roomId, userName, isHost, callbacks);
         enhancedManagerRef.current = manager;
