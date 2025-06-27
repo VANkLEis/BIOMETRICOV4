@@ -10,7 +10,7 @@ const Logo: React.FC<{ className?: string }> = ({ className = '' }) => {
         <img src={logo} alt="Company Logo" className="h-12 w-auto" />
       ) : (
         <img 
-          src="/home/project/LogoPrincipal.png"
+          src="LogoPrincipal.png"
           alt="Default Logo" 
           className="h-12 w-auto" 
         />
