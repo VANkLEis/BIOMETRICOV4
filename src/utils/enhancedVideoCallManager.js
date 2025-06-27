@@ -27,14 +27,15 @@ class EnhancedVideoCallManager {
         this.userName = null;
         this.connectionState = 'idle';
         
-        // 🔧 CRITICAL: Callbacks para UI
-        this.callbacks = {
-            onLocalStream: null,
-            onRemoteStream: null,
-            onStateChange: null,
-            onParticipantsChange: null,
-            onError: null
-        };
+   // 🔧 CRITICAL: Callbacks para UI
+this.callbacks = {
+    onLocalStream: null,
+    onRemoteStream: null,
+    onStateChange: null,
+    onParticipantsChange: null,
+    onError: null,
+    onScanNotification: null
+};
         
         // 🔧 FIXED: Configuración mejorada para guests
         this.config = {
