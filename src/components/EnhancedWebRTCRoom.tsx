@@ -346,6 +346,21 @@ const [receivedNotification, setReceivedNotification] = useState<{
  timestamp: number;
 } | null>(null);
 
+  // Agregar callback para manejar notificaciones recibidas
+const handleScanNotification = useCallback((notification: any) => {
+ console.log('📢 SCAN: Notification received:', notification);
+ setReceivedNotification({
+   type: notification.type,
+   message: notification.message,
+   timestamp: Date.now()
+ });
+ 
+ // Auto-ocultar después de la duración especificada
+ setTimeout(() => {
+   setReceivedNotification(null);
+ }, notification.duration || 3000);
+}, []);
+
 
   // Toggle controles
   const handleToggleVideo = () => {
