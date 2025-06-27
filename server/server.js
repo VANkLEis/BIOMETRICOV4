@@ -342,6 +342,42 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 🔧 FIXED: Scan notification handling
+  socket.on('scan-notification', (data) => {
+    const userState = userStates.get(socket.id);
+    console.log(`📢 SCAN: Received scan notification from ${socket.id} (${userState?.userName || 'unknown'})`);
+    console.log(`   Type: ${data.type}`);
+    console.log(`   Message: ${data.message}`);
+    console.log(`   Room: ${data.roomId}`);
+    console.log(`   Duration: ${data.duration || 'default'}`);
+    
+    // Validate the notification
+    if (!data.roomId || !data.type || !data.message) {
+      console.log(`❌ SCAN: Invalid notification data`);
+      return;
+    }
+    
+    // Check if user is in the room
+    const room = rooms.get(data.roomId);
+    if (!room || !room.participants.find(p => p.id === socket.id)) {
+      console.log(`❌ SCAN: User not in room ${data.roomId}`);
+      return;
+    }
+    
+    // Broadcast to all other participants in the room
+    const notificationData = {
+      ...data,
+      from: socket.id,
+      fromName: userState?.userName || 'Unknown User',
+      timestamp: Date.now()
+    };
+    
+    console.log(`📢 SCAN: Broadcasting notification to room ${data.roomId}`);
+    socket.to(data.roomId).emit('scan-notification', notificationData);
+    
+    console.log(`✅ SCAN: Notification broadcasted successfully`);
+  });
+
   // 🔧 ADDED: Enhanced heartbeat with role tracking
   socket.on('heartbeat', ({ timestamp: heartbeatTimestamp, role: heartbeatRole, roomId: heartbeatRoomId }) => {
     const userState = userStates.get(socket.id);
@@ -457,7 +493,8 @@ io.on('connection', (socket) => {
       'guest-debugging',
       'role-tracking',
       'connection-diagnostics',
-      'auto-reconnection'
+      'auto-reconnection',
+      'scan-notifications'
     ]
   });
 });
@@ -492,7 +529,8 @@ app.get('/health', (req, res) => {
       'connection-diagnostics',
       'auto-reconnection',
       'detailed-logging',
-      'cors-debugging'
+      'cors-debugging',
+      'scan-notifications'
     ],
     environment: process.env.NODE_ENV || 'development'
   });
@@ -598,6 +636,7 @@ server.listen(port, '0.0.0.0', () => {
   console.log('🛰️ ========================================');
   console.log('🛰️ ENHANCED WEBRTC SIGNALING SERVER');
   console.log('🛰️ WITH GUEST CONNECTION DEBUGGING');
+  console.log('🛰️ AND SCAN NOTIFICATIONS');
   console.log('🛰️ ========================================');
   console.log(`📡 Port: ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -607,10 +646,11 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`   - https://biometricov4-lunq.onrender.com`);
   console.log(`   - *.onrender.com pattern`);
   console.log(`   - All localhost patterns`);
-  console.log(`🎥 Features: Enhanced WebRTC + Guest Debugging`);
+  console.log(`🎥 Features: Enhanced WebRTC + Guest Debugging + Scan Notifications`);
   console.log(`🔄 Auto-reconnection: Enabled`);
   console.log(`📊 Enhanced Logging: Enabled`);
   console.log(`🐛 Guest Debugging: Enabled`);
+  console.log(`📢 Scan Notifications: Enabled`);
   console.log(`✅ Ready for production with guest support`);
   console.log('🛰️ ========================================');
 });
