@@ -118,27 +118,35 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setLocalStream(stream);
     
     // 🔧 CRITICAL: Asignar stream al elemento video local INMEDIATAMENTE
-    if (localVideoRef.current) {
-      console.log("🎥 FIXED: Assigning local stream to video element");
-      localVideoRef.current.srcObject = stream;
-      localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
-      
-      // 🔧 FIXED: Forzar reproducción inmediata
-      localVideoRef.current.play().then(() => {
-        console.log("✅ FIXED: Local video is now playing and visible");
-        setShowLocalVideo(true);
-      }).catch(error => {
-        console.error("❌ FIXED: Local video play failed:", error);
-        // Reintentar después de un momento
-        setTimeout(() => {
-          if (localVideoRef.current && localVideoRef.current.paused) {
-            localVideoRef.current.play().catch(console.error);
-          }
-        }, 1000);
-      });
-    } else {
-      console.error("❌ FIXED: Local video ref is null!");
-    }
+    const assignStreamToVideo = () => {
+      if (localVideoRef.current && stream) {
+        console.log("🎥 FIXED: Assigning local stream to video element");
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true; // CRÍTICO: evitar feedback
+        
+        // 🔧 FIXED: Forzar reproducción inmediata
+        localVideoRef.current.play().then(() => {
+          console.log("✅ FIXED: Local video is now playing and visible");
+          setShowLocalVideo(true);
+        }).catch(error => {
+          console.error("❌ FIXED: Local video play failed:", error);
+          // Reintentar después de un momento
+          setTimeout(() => {
+            if (localVideoRef.current && localVideoRef.current.paused) {
+              localVideoRef.current.play().catch(console.error);
+            }
+          }, 1000);
+        });
+      } else {
+        console.error("❌ FIXED: Local video ref is null or stream is null!");
+        // Reintentar en el próximo tick
+        setTimeout(assignStreamToVideo, 100);
+      }
+    };
+    
+    // Ejecutar inmediatamente y también en el próximo tick por si el ref no está listo
+    assignStreamToVideo();
+    setTimeout(assignStreamToVideo, 50);
   }, []);
 
   // Callback para manejar stream remoto
