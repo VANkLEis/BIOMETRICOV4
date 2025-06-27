@@ -1,5 +1,6 @@
+```javascript
 /**
- * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED
+ * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED + SCAN NOTIFICATIONS
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -9,9 +10,10 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
+ * 8. ✅ Notificaciones de escaneo (face/hand) para todos los participantes
  * 
  * @author SecureCall Team
- * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
+ * @version 7.1.0 - SCAN NOTIFICATIONS ADDED
  */
 
 import { io } from 'socket.io-client';
@@ -33,12 +35,12 @@ class EnhancedVideoCallManager {
             onRemoteStream: null,
             onStateChange: null,
             onParticipantsChange: null,
-            onError: null
+            onError: null,
+            onScanNotification: null // 📢 AÑADIDO: Callback para notificaciones de escaneo
         };
         
         // 🔧 FIXED: Configuración mejorada para guests
         this.config = {
-            // Servidores STUN/TURN más robustos
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
@@ -61,24 +63,20 @@ class EnhancedVideoCallManager {
                     credential: 'openrelayproject'
                 }
             ],
-            // Timeouts más generosos para guests
             connectionTimeout: 30000,
             mediaTimeout: 45000,
             iceTimeout: 20000,
             signalingTimeout: 15000,
-            // Reintentos automáticos
             maxRetries: 5,
             retryDelay: 2000
         };
         
-        // Estados de conexión
         this.connectionAttempts = 0;
         this.lastError = null;
         this.participants = [];
         this.isConnecting = false;
         this.mediaReady = false;
         
-        // 🔧 ADDED: Diagnóstico de conectividad
         this.diagnostics = {
             serverReachable: false,
             socketConnected: false,
@@ -149,7 +147,6 @@ class EnhancedVideoCallManager {
         return suggestions;
     }
 
-    // 🔧 FIXED: Diagnóstico completo de conectividad
     async runConnectivityDiagnostic() {
         this._log('🔍 Running comprehensive connectivity diagnostic...');
         
@@ -178,7 +175,6 @@ class EnhancedVideoCallManager {
             }
         };
 
-        // Test server connectivity
         try {
             const serverUrl = this._getServerUrl();
             const startTime = Date.now();
@@ -202,7 +198,6 @@ class EnhancedVideoCallManager {
             this.diagnostics.serverReachable = false;
         }
 
-        // Test media permissions
         try {
             const permissions = await navigator.permissions.query({ name: 'camera' });
             results.media.permissionState = permissions.state;
@@ -230,7 +225,6 @@ class EnhancedVideoCallManager {
             'https://biometricov4.onrender.com';
     }
 
-    // 🔧 FIXED: Conexión al servidor con reintentos automáticos
     async connectToSignaling() {
         if (this.isConnecting) {
             this._log('⚠️ Already connecting to signaling server');
@@ -244,7 +238,6 @@ class EnhancedVideoCallManager {
             this._setState('connecting_signaling');
             this._log(`🔗 Connecting to signaling server (attempt ${this.connectionAttempts}/${this.config.maxRetries})`);
 
-            // Ejecutar diagnóstico si es el primer intento
             if (this.connectionAttempts === 1) {
                 await this.runConnectivityDiagnostic();
             }
@@ -258,14 +251,12 @@ class EnhancedVideoCallManager {
             this._setState('signaling_connected');
             this._log('✅ Successfully connected to signaling server');
             
-            // Iniciar heartbeat
             this._startHeartbeat();
             
         } catch (error) {
             this.diagnostics.socketConnected = false;
             this._handleError(error, 'server_connection');
             
-            // Reintentar si no hemos alcanzado el máximo
             if (this.connectionAttempts < this.config.maxRetries) {
                 this._log(`🔄 Retrying connection in ${this.config.retryDelay}ms...`);
                 setTimeout(() => {
@@ -287,7 +278,6 @@ class EnhancedVideoCallManager {
                 reject(new Error('Connection timeout - server may be starting up'));
             }, this.config.connectionTimeout);
 
-            // Limpiar socket anterior
             if (this.socket) {
                 this.socket.disconnect();
                 this.socket = null;
@@ -346,12 +336,10 @@ class EnhancedVideoCallManager {
     }
 
     _setupSocketEvents() {
-        // Confirmación de conexión
         this.socket.on('connection-confirmed', (data) => {
             this._log(`✅ Connection confirmed: ${data.message}`);
         });
 
-        // Eventos de room
         this.socket.on('user-joined', (data) => {
             this._log(`👤 User joined: ${JSON.stringify(data)}`);
             this.participants = data.participants || [];
@@ -360,7 +348,6 @@ class EnhancedVideoCallManager {
                 this.callbacks.onParticipantsChange(this.participants);
             }
 
-            // Si somos host y hay otros participantes, iniciar conexión
             if (this.isHost && this.participants.length > 1 && this.mediaReady) {
                 setTimeout(() => this._initiatePeerConnection(), 1000);
             }
@@ -377,7 +364,6 @@ class EnhancedVideoCallManager {
             this._clearRemoteStream();
         });
 
-        // Eventos WebRTC signaling
         this.socket.on('offer', async (data) => {
             if (data.from !== this.socket.id) {
                 this._log(`📥 Received offer from ${data.from}`);
@@ -399,7 +385,14 @@ class EnhancedVideoCallManager {
             }
         });
 
-        // Heartbeat
+        // 📢 AÑADIDO: Manejo de notificaciones de escaneo
+        this.socket.on('scan-notification', (notification) => {
+            this._log(`📢 Received scan notification: ${JSON.stringify(notification)}`);
+            if (this.callbacks.onScanNotification && notification.from !== this.socket.id) {
+                this.callbacks.onScanNotification(notification);
+            }
+        });
+
         this.socket.on('heartbeat-ack', () => {
             this._log('💓 Heartbeat acknowledged');
         });
@@ -421,7 +414,6 @@ class EnhancedVideoCallManager {
         }, 30000);
     }
 
-    // 🔧 FIXED: Unirse al room con mejor manejo de errores
     async joinRoom(roomId, userName) {
         try {
             this._setState('joining_room');
@@ -466,25 +458,21 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
             this._setState('requesting_media');
             this._log('🎥 Setting up local media...');
 
-            // Verificar contexto seguro
             if (!window.isSecureContext && 
                 window.location.protocol !== 'https:' && 
                 !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
                 throw new Error('HTTPS required for camera access');
             }
 
-            // Verificar soporte del navegador
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('Browser does not support camera access');
             }
 
-            // Verificar permisos
             try {
                 const permissions = await navigator.permissions.query({ name: 'camera' });
                 if (permissions.state === 'denied') {
@@ -494,9 +482,7 @@ class EnhancedVideoCallManager {
                 this._log('Cannot check permissions directly, proceeding...', 'warn');
             }
 
-            // Configuración de constraints progresiva
             const constraintSets = [
-                // Configuración óptima
                 {
                     video: {
                         width: { ideal: 640, min: 320, max: 1280 },
@@ -510,7 +496,6 @@ class EnhancedVideoCallManager {
                         autoGainControl: true
                     }
                 },
-                // Configuración básica
                 {
                     video: {
                         width: { ideal: 320, min: 160 },
@@ -519,12 +504,10 @@ class EnhancedVideoCallManager {
                     },
                     audio: true
                 },
-                // Configuración mínima
                 {
                     video: true,
                     audio: true
                 },
-                // Solo video
                 {
                     video: true,
                     audio: false
@@ -555,7 +538,7 @@ class EnhancedVideoCallManager {
                     this._log(`Constraints set ${i + 1} failed: ${error.message}`, 'warn');
                     
                     if (error.name === 'NotAllowedError') {
-                        break; // No intentar más si se deniegan permisos
+                        break;
                     }
                 }
             }
@@ -568,7 +551,6 @@ class EnhancedVideoCallManager {
             this.mediaReady = true;
             this.diagnostics.mediaGranted = true;
 
-            // Llamar callback inmediatamente
             if (this.callbacks.onLocalStream) {
                 this.callbacks.onLocalStream(stream);
             }
@@ -585,13 +567,11 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de peer connection mejorada
     async _initiatePeerConnection() {
         try {
             this._setState('creating_peer_connection');
             this._log('🔗 Creating peer connection...');
 
-            // Limpiar conexión anterior
             if (this.peerConnection) {
                 this.peerConnection.close();
                 this.peerConnection = null;
@@ -606,7 +586,6 @@ class EnhancedVideoCallManager {
 
             this._setupPeerConnectionEvents();
 
-            // Agregar tracks locales
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => {
                     this._log(`➕ Adding ${track.kind} track`);
@@ -614,7 +593,6 @@ class EnhancedVideoCallManager {
                 });
             }
 
-            // Crear offer si somos host
             if (this.isHost) {
                 await this._createOffer();
             }
@@ -756,7 +734,27 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Inicialización completa
+    // 📢 AÑADIDO: Enviar notificación de escaneo
+    async sendScanNotification(notification) {
+        try {
+            if (!this.socket || !this.socket.connected) {
+                throw new Error('Not connected to signaling server');
+            }
+            this._log(`📢 Sending scan notification: ${JSON.stringify(notification)}`);
+            this.socket.emit('scan-notification', {
+                roomId: this.roomId,
+                notification: {
+                    ...notification,
+                    from: this.socket.id
+                }
+            });
+            return true;
+        } catch (error) {
+            this._log(`❌ Failed to send scan notification: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
             this._log(`🚀 Initializing as ${isHost ? 'HOST' : 'GUEST'}`);
@@ -766,16 +764,10 @@ class EnhancedVideoCallManager {
             this.isHost = isHost;
             this.callbacks = { ...this.callbacks, ...callbacks };
             
-            // 1. Conectar al servidor
             await this.connectToSignaling();
-            
-            // 2. Unirse al room
             await this.joinRoom(roomId, userName);
-            
-            // 3. Configurar medios
             await this.setupLocalMedia();
             
-            // 4. Si hay otros participantes, iniciar peer connection
             if (this.participants.length > 1) {
                 await this._initiatePeerConnection();
             }
@@ -792,7 +784,6 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // Control de medios
     toggleVideo() {
         if (this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
@@ -817,7 +808,6 @@ class EnhancedVideoCallManager {
         return false;
     }
 
-    // Información de debug
     getDebugInfo() {
         return {
             connectionState: this.connectionState,
@@ -838,7 +828,6 @@ class EnhancedVideoCallManager {
         };
     }
 
-    // Limpieza
     cleanup() {
         this._log('🧹 Cleaning up...');
 
@@ -874,10 +863,8 @@ class EnhancedVideoCallManager {
     }
 }
 
-// Instancia global
 let enhancedVideoCallManager = null;
 
-// Función principal de inicialización
 export async function initializeEnhancedVideoCall(roomId, userName, isHost, callbacks = {}) {
     try {
         console.log('🚀 Starting Enhanced VideoCallManager...');
@@ -919,3 +906,236 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
+```
+
+#### Cambios en `enhancedVideoCallManager.js`:
+1. **Añadido `onScanNotification` al objeto `callbacks`**: Se incluye en el constructor para soportar el callback de notificaciones de escaneo.
+2. **Añadida función `sendScanNotification`**:
+   - Emite un evento `scan-notification` a través de Socket.IO con el `roomId` y la notificación, incluyendo el `from` para identificar al remitente.
+   - Verifica que el socket esté conectado antes de enviar.
+   - Registra logs para confirmar el envío o reportar errores.
+3. **Añadido manejador de `scan-notification` en `_setupSocketEvents`**:
+   - Escucha el evento `scan-notification` desde el servidor.
+   - Dispara el callback `onScanNotification` solo si la notificación no proviene del propio cliente (`from !== this.socket.id`).
+4. **Versión actualizada**: Cambié la versión a `7.1.0` para reflejar la adición de notificaciones de escaneo.
+
+#### 2. Actualizar `EnhancedWebRTCRoom.tsx`
+Eliminaremos la simulación local de notificaciones (agregada anteriormente para pruebas) y confiaremos en la transmisión real a través del servidor de señalización. Aquí está la versión actualizada, manteniendo solo los métodos relevantes para el escaneo.
+
+<xaiArtifact artifact_id="98efbd3a-9e78-4e07-a519-01fd7fca2c68" artifact_version_id="c2e263de-f011-4d1a-9df4-129406ba08ef" title="EnhancedWebRTCRoom.tsx" contentType="text/typescript">
+```typescript
+// ... (importaciones y código previo sin cambios)
+
+const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomId, onEndCall }) => {
+  // ... (refs, estados y otros métodos sin cambios)
+
+  // Escaneo facial
+  const handleFaceScan = () => {
+    if (faceScanning) return;
+    
+    setFaceScanning(true);
+    console.log('🔍 Starting face scan animation...');
+    
+    if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+      console.log('📢 SCAN: Sending face scan notification');
+      enhancedManagerRef.current.sendScanNotification({
+        type: 'face_scan',
+        message: `${userName} está escaneando tu rostro`,
+        duration: 5000
+      }).catch((err: any) => {
+        console.error('❌ SCAN: Failed to send face scan notification:', err);
+      });
+    } else {
+      console.error('❌ SCAN: sendScanNotification not available');
+    }
+    
+    setTimeout(() => {
+      setFaceScanning(false);
+      console.log('✅ Face scan animation completed');
+    }, 5000);
+  };
+
+  // Escaneo de mano
+  const handleHandScan = () => {
+    if (handScanning) return;
+    
+    setHandScanning(true);
+    console.log('👋 Starting hand scan animation...');
+    
+    if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+      console.log('📢 SCAN: Sending hand scan notification');
+      enhancedManagerRef.current.sendScanNotification({
+        type: 'hand_scan',
+        message: `${userName} está escaneando tu mano`,
+        duration: 5000
+      }).catch((err: any) => {
+        console.error('❌ SCAN: Failed to send hand scan notification:', err);
+      });
+    } else {
+      console.error('❌ SCAN: sendScanNotification not available');
+    }
+    
+    setTimeout(() => {
+      setHandScanning(false);
+      console.log('✅ Hand scan animation completed');
+    }, 5000);
+  };
+
+  // ... (resto del código sin cambios)
+};
+
+// ... (export default sin cambios)
+```
+
+#### Cambios en `EnhancedWebRTCRoom.tsx`:
+1. **Eliminada la simulación local**: Quité las llamadas a `handleScanNotification` dentro de `handleFaceScan` y `handleHandScan`, ya que ahora confiamos en la transmisión real a través del servidor de señalización.
+2. **Mantiene el manejo de errores**: Conserva los logs y el manejo de errores para `sendScanNotification`.
+3. **Sin cambios en la UI**: La renderización de notificaciones (`receivedNotification`) ya está correcta y no necesita modificaciones.
+
+#### 3. Actualizar el Servidor de Señalización
+El servidor de señalización debe manejar el evento `scan-notification` y retransmitirlo a todos los participantes en la sala, excepto al remitente. Dado que usas Socket.IO y el servidor está alojado en `https://biometricov4.onrender.com`, aquí está el código necesario para el servidor (agrega esto a tu archivo del servidor, e.g., `server.js`):
+
+```javascript
+// server.js
+const express = require('express');
+const { Server } = require('socket.io');
+const http = require('http');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*', // Ajusta según tus necesidades de seguridad
+    methods: ['GET', 'POST']
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log(`User connected: ${socket.id}`);
+
+  socket.on('join-room', ({ roomId, userName, role, timestamp }) => {
+    socket.join(roomId);
+    console.log(`${userName} (${role}) joined room ${roomId}`);
+
+    const room = io.sockets.adapter.rooms.get(roomId);
+    const participants = room ? Array.from(room).map(id => {
+      const clientSocket = io.sockets.sockets.get(id);
+      return clientSocket.handshake.query['user-name'] || id;
+    }) : [userName];
+
+    io.to(roomId).emit('user-joined', { participants, userName });
+  });
+
+  socket.on('offer', ({ roomId, offer }) => {
+    socket.to(roomId).emit('offer', { offer, from: socket.id });
+  });
+
+  socket.on('answer', ({ roomId, answer }) => {
+    socket.to(roomId).emit('answer', { answer, from: socket.id });
+  });
+
+  socket.on('ice-candidate', ({ roomId, candidate }) => {
+    socket.to(roomId).emit('ice-candidate', { candidate, from: socket.id });
+  });
+
+  socket.on('scan-notification', ({ roomId, notification }) => {
+    console.log(`Broadcasting scan notification to room ${roomId}:`, notification);
+    socket.to(roomId).emit('scan-notification', notification);
+  });
+
+  socket.on('heartbeat', (data) => {
+    socket.emit('heartbeat-ack');
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User disconnected: ${socket.id}`);
+    // Actualizar lista de participantes en todas las salas del socket
+    const rooms = socket.rooms;
+    rooms.forEach(roomId => {
+      if (roomId !== socket.id) {
+        const room = io.sockets.adapter.rooms.get(roomId);
+        const participants = room ? Array.from(room).map(id => {
+          const clientSocket = io.sockets.sockets.get(id);
+          return clientSocket.handshake.query['user-name'] || id;
+        }) : [];
+        io.to(roomId).emit('user-left', { participants });
+      }
+    });
+  });
+});
+
+// Endpoint de salud para diagnóstico
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+```
+
+#### Cambios en el servidor:
+1. **Evento `scan-notification`**:
+   - Escucha el evento `scan-notification` y lo retransmite a todos los participantes en la sala (`roomId`) usando `socket.to(roomId).emit`.
+   - Incluye el campo `from` para que el cliente receptor pueda filtrar notificaciones propias.
+2. **CORS**: Configurado para permitir conexiones desde cualquier origen (`*`), pero ajusta esto según tus necesidades de seguridad.
+3. **Mantenimiento de participantes**: Asegura que la lista de participantes se actualice correctamente al unirse o salir usuarios.
+
+### Pasos para Verificar
+1. **Actualiza los archivos**:
+   - Reemplaza `enhancedVideoCallManager.js` con el código proporcionado.
+   - Actualiza `EnhancedWebRTCRoom.tsx` eliminando la simulación local.
+   - Asegúrate de que el servidor en `https://biometricov4.onrender.com` tenga el código actualizado o implementa el servidor localmente si estás en desarrollo (`http://localhost:3000`).
+
+2. **Prueba la conexión**:
+   - Abre dos navegadores (o dispositivos) y únete a la misma sala (`roomId`).
+   - Verifica en la consola del cliente iniciador:
+     - `📢 SCAN: Sending [face/hand] scan notification` al hacer clic en los botones de escaneo.
+     - No debería aparecer `❌ SCAN: sendScanNotification not available`.
+   - En el cliente remoto, busca:
+     - `📢 Received scan notification: {...}` en la consola.
+     - La notificación visual en el centro de la pantalla con el mensaje (e.g., "[userName] está escaneando tu rostro").
+   - Revisa el panel de depuración (`Show Enhanced Debug`) en el cliente remoto y verifica que "Notification" muestre los detalles de la notificación recibida.
+
+3. **Inspecciona el servidor**:
+   - Si usas `https://biometricov4.onrender.com`, asegúrate de que el servidor esté actualizado con el código proporcionado.
+   - Localmente, ejecuta el servidor con `node server.js` y verifica los logs para confirmar que recibe y retransmite el evento `scan-notification`.
+   - Ejemplo de log esperado en el servidor:
+     ```
+     Broadcasting scan notification to room [roomId]: { type: 'face_scan', message: '[userName] está escaneando tu rostro', duration: 5000, from: '[socketId]' }
+     ```
+
+4. **Depura problemas**:
+   - **Si no ves la notificación en el cliente remoto**:
+     - Revisa la consola del cliente remoto para errores como `❌ Error in ...`.
+     - Confirma que el estado de conexión es `peer_connected` y que `diagnostics.socketConnected` es `true` en ambos clientes.
+     - Verifica en el servidor si el evento `scan-notification` llega y se retransmite.
+   - **Si el servidor no recibe el evento**:
+     - Asegúrate de que el cliente está conectado al servidor correcto (`http://localhost:3000` o `https://biometricov4.onrender.com`).
+     - Revisa la configuración de CORS y las conexiones WebSocket en DevTools (Network > WS).
+   - **Si la notificación aparece localmente pero no remotamente**:
+     - El servidor podría no estar retransmitiendo correctamente. Verifica los logs del servidor.
+     - Confirma que ambos clientes están en la misma `roomId`.
+
+5. **Prueba con múltiples participantes**:
+   - Une más de dos clientes a la sala y verifica que todos los participantes (excepto el iniciador) reciban la notificación.
+
+### Notas Adicionales
+- **Dependencias del servidor**: Asegúrate de que el servidor tenga instaladas las dependencias `express` y `socket.io`:
+  ```bash
+  npm install express socket.io
+  ```
+- **Seguridad**: Si el servidor está en producción (`https://biometricov4.onrender.com`), ajusta la configuración de CORS para permitir solo orígenes confiables (e.g., tu dominio de frontend).
+- **Tiempo de notificación**: El `duration: 5000` asegura que la notificación sea visible durante 5 segundos. Puedes ajustarlo si necesitas más o menos tiempo.
+- **WebRTC Data Channel como alternativa**: Si prefieres usar el canal de datos WebRTC en lugar de Socket.IO para las notificaciones, puedo proporcionar una implementación alternativa. Sin embargo, Socket.IO es más simple y confiable para este caso, ya que ya lo usas para la señalización.
+
+### Si el Problema Persiste
+- **Comparte logs**:
+  - Del cliente iniciador: Busca `📢 SCAN: Sending ...` y cualquier error.
+  - Del cliente remoto: Busca `📢 Received scan notification` y verifica el panel de depuración.
+  - Del servidor: Confirma que el evento `scan-notification` se recibe y retransmite.
+- **Verifica el servidor**: Si usas `https://biometricov4.onrender.com`, asegúrate de que el código del servidor esté actualizado. Si es un servidor de terceros, comparte detalles sobre su configuración.
+- **Prueba localmente**: Configura el servidor localmente (`http://localhost:3000`) para descartar problemas con el entorno de producción.
+
+Con estas actualizaciones, las notificaciones de escaneo deberían aparecer en el centro de la pantalla del cliente remoto. ¡Prueba y dime cómo va! Si necesitas ayuda con el servidor o ves errores específicos, comparte los detalles y lo resolveremos.
