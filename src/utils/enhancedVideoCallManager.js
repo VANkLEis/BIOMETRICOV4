@@ -1,5 +1,6 @@
+```javascript
 /**
- * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED
+ * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED + SCAN NOTIFICATIONS
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -9,9 +10,10 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
+ * 8. ✅ Notificaciones de escaneo (face/hand) para todos los participantes
  * 
  * @author SecureCall Team
- * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
+ * @version 7.1.0 - GUEST CONNECTION + SCAN NOTIFICATIONS
  */
 
 import { io } from 'socket.io-client';
@@ -33,7 +35,8 @@ class EnhancedVideoCallManager {
             onRemoteStream: null,
             onStateChange: null,
             onParticipantsChange: null,
-            onError: null
+            onError: null,
+            onScanNotification: null // ADDED: Callback para notificaciones de escaneo
         };
         
         // 🔧 FIXED: Configuración mejorada para guests
@@ -399,6 +402,14 @@ class EnhancedVideoCallManager {
             }
         });
 
+        // ADDED: Manejo de notificaciones de escaneo
+        this.socket.on('scan-notification', (notification) => {
+            this._log(`📢 Received scan notification: ${JSON.stringify(notification)}`);
+            if (this.callbacks.onScanNotification && notification.from !== this.socket.id) {
+                this.callbacks.onScanNotification(notification);
+            }
+        });
+
         // Heartbeat
         this.socket.on('heartbeat-ack', () => {
             this._log('💓 Heartbeat acknowledged');
@@ -756,6 +767,27 @@ class EnhancedVideoCallManager {
         }
     }
 
+    // ADDED: Enviar notificaciones de escaneo
+    async sendScanNotification(notification) {
+        try {
+            if (!this.socket || !this.socket.connected) {
+                throw new Error('Not connected to signaling server');
+            }
+            this._log(`📢 Sending scan notification: ${JSON.stringify(notification)}`);
+            this.socket.emit('scan-notification', {
+                roomId: this.roomId,
+                notification: {
+                    ...notification,
+                    from: this.socket.id
+                }
+            });
+            return true;
+        } catch (error) {
+            this._log(`❌ Failed to send scan notification: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
     // 🔧 FIXED: Inicialización completa
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
@@ -919,3 +951,13 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
+
+// ADDED: Return explícito para compatibilidad con Render
+return {
+    initializeEnhancedVideoCall,
+    getEnhancedDebugInfo,
+    toggleEnhancedVideo,
+    toggleEnhancedAudio,
+    cleanupEnhancedVideoCall,
+    EnhancedVideoCallManager
+};
