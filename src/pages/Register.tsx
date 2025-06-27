@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Video, User, AtSign, Lock } from 'lucide-react';
+import { User, AtSign, Lock } from 'lucide-react';
+import Logo from '../components/Logo';
 
 const Register: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -43,7 +44,7 @@ const Register: React.FC = () => {
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="flex justify-center">
-            <Video className="h-12 w-12 text-blue-600" />
+            <Logo />
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Create your account
@@ -128,7 +129,7 @@ const Register: React.FC = () => {
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
-                  id="confirm-password"
+                  id="confirm-password"     
                   name="confirm-password"
                   type="password"
                   autoComplete="new-password"
