@@ -399,6 +399,20 @@ this.callbacks = {
                 await this._handleIceCandidate(data.candidate);
             }
         });
+      // 🔧 ADDED: Eventos de notificaciones de escaneo
+this.socket.on('scan-notification', (data) => {
+    this._log(`📢 Received scan notification: ${data.type} - ${data.message}`);
+    
+    if (this.callbacks.onScanNotification) {
+        this.callbacks.onScanNotification({
+            type: data.type,
+            message: data.message,
+            duration: data.duration || 3000,
+            from: data.from,
+            timestamp: data.timestamp || Date.now()
+        });
+    }
+});
 
         // Heartbeat
         this.socket.on('heartbeat-ack', () => {
