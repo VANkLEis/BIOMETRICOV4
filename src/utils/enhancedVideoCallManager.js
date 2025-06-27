@@ -91,13 +91,16 @@ class EnhancedVideoCallManager {
         this.connectionMonitor = null;
     }
 
-    _log(message, level = 'info') {
-        if (this.debugMode) {
-            const timestamp = new Date().toISOString();
-            const role = this.isHost ? 'HOST' : 'GUEST';
-            console[level](`[${role} ${timestamp}] ${message}`);
-        }
+  _log(message, level = 'info') {
+    if (this.debugMode) {
+        const timestamp = new Date().toISOString();
+        const role = this.isHost ? 'HOST' : 'GUEST';
+        // Validar que level sea un método válido de console
+        const validLevels = ['log', 'info', 'warn', 'error', 'debug'];
+        const consoleLevel = validLevels.includes(level) ? level : 'log';
+        console[consoleLevel](`[${role} ${timestamp}] ${message}`);
     }
+}
 
     _setState(newState, data = null) {
         const oldState = this.connectionState;
