@@ -804,6 +804,23 @@ const handleScanNotification = useCallback((notification: any) => {
         </div>
         
         <div className="flex items-center justify-center space-x-6">
+
+          {/* Botón Fix Video Local */}
+<button
+ onClick={handleForceLocalVideo}
+ disabled={forceLocalVideoVisible}
+ className={`p-4 rounded-full transition-all duration-200 ${
+   forceLocalVideoVisible 
+     ? 'bg-orange-600 animate-pulse text-white' 
+     : 'bg-orange-600 hover:bg-orange-700 text-white hover:scale-105'
+ } disabled:opacity-75`}
+ title="Forzar video local"
+>
+ <Wrench className="h-6 w-6" />
+</button>
+
+{/* Separador */}
+<div className="h-8 w-px bg-gray-600"></div>
           {/* Controles de Audio/Video */}
           <button
             onClick={handleToggleAudio}
