@@ -91,7 +91,7 @@ class EnhancedVideoCallManager {
         this.connectionMonitor = null;
     }
 
-  _log(message, level = 'info') {
+_log(message, level = 'info') {
     if (this.debugMode) {
         const timestamp = new Date().toISOString();
         const role = this.isHost ? 'HOST' : 'GUEST';
