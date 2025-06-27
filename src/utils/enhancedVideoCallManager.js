@@ -1,3 +1,4 @@
+```javascript
 /**
  * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED + SCAN NOTIFICATIONS
  * 
@@ -901,3 +902,4 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
+```
