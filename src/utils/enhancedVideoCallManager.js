@@ -1,4 +1,3 @@
-```javascript
 /**
  * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED + SCAN NOTIFICATIONS
  * 
@@ -29,19 +28,16 @@ class EnhancedVideoCallManager {
         this.userName = null;
         this.connectionState = 'idle';
         
-        // 🔧 CRITICAL: Callbacks para UI
         this.callbacks = {
             onLocalStream: null,
             onRemoteStream: null,
             onStateChange: null,
             onParticipantsChange: null,
             onError: null,
-            onScanNotification: null // ADDED: Callback para notificaciones de escaneo
+            onScanNotification: null
         };
         
-        // 🔧 FIXED: Configuración mejorada para guests
         this.config = {
-            // Servidores STUN/TURN más robustos
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
@@ -64,24 +60,20 @@ class EnhancedVideoCallManager {
                     credential: 'openrelayproject'
                 }
             ],
-            // Timeouts más generosos para guests
             connectionTimeout: 30000,
             mediaTimeout: 45000,
             iceTimeout: 20000,
             signalingTimeout: 15000,
-            // Reintentos automáticos
             maxRetries: 5,
             retryDelay: 2000
         };
         
-        // Estados de conexión
         this.connectionAttempts = 0;
         this.lastError = null;
         this.participants = [];
         this.isConnecting = false;
         this.mediaReady = false;
         
-        // 🔧 ADDED: Diagnóstico de conectividad
         this.diagnostics = {
             serverReachable: false,
             socketConnected: false,
@@ -152,7 +144,6 @@ class EnhancedVideoCallManager {
         return suggestions;
     }
 
-    // 🔧 FIXED: Diagnóstico completo de conectividad
     async runConnectivityDiagnostic() {
         this._log('🔍 Running comprehensive connectivity diagnostic...');
         
@@ -181,7 +172,6 @@ class EnhancedVideoCallManager {
             }
         };
 
-        // Test server connectivity
         try {
             const serverUrl = this._getServerUrl();
             const startTime = Date.now();
@@ -205,7 +195,6 @@ class EnhancedVideoCallManager {
             this.diagnostics.serverReachable = false;
         }
 
-        // Test media permissions
         try {
             const permissions = await navigator.permissions.query({ name: 'camera' });
             results.media.permissionState = permissions.state;
@@ -233,7 +222,6 @@ class EnhancedVideoCallManager {
             'https://biometricov4.onrender.com';
     }
 
-    // 🔧 FIXED: Conexión al servidor con reintentos automáticos
     async connectToSignaling() {
         if (this.isConnecting) {
             this._log('⚠️ Already connecting to signaling server');
@@ -247,7 +235,6 @@ class EnhancedVideoCallManager {
             this._setState('connecting_signaling');
             this._log(`🔗 Connecting to signaling server (attempt ${this.connectionAttempts}/${this.config.maxRetries})`);
 
-            // Ejecutar diagnóstico si es el primer intento
             if (this.connectionAttempts === 1) {
                 await this.runConnectivityDiagnostic();
             }
@@ -261,14 +248,12 @@ class EnhancedVideoCallManager {
             this._setState('signaling_connected');
             this._log('✅ Successfully connected to signaling server');
             
-            // Iniciar heartbeat
             this._startHeartbeat();
             
         } catch (error) {
             this.diagnostics.socketConnected = false;
             this._handleError(error, 'server_connection');
             
-            // Reintentar si no hemos alcanzado el máximo
             if (this.connectionAttempts < this.config.maxRetries) {
                 this._log(`🔄 Retrying connection in ${this.config.retryDelay}ms...`);
                 setTimeout(() => {
@@ -290,7 +275,6 @@ class EnhancedVideoCallManager {
                 reject(new Error('Connection timeout - server may be starting up'));
             }, this.config.connectionTimeout);
 
-            // Limpiar socket anterior
             if (this.socket) {
                 this.socket.disconnect();
                 this.socket = null;
@@ -349,12 +333,10 @@ class EnhancedVideoCallManager {
     }
 
     _setupSocketEvents() {
-        // Confirmación de conexión
         this.socket.on('connection-confirmed', (data) => {
             this._log(`✅ Connection confirmed: ${data.message}`);
         });
 
-        // Eventos de room
         this.socket.on('user-joined', (data) => {
             this._log(`👤 User joined: ${JSON.stringify(data)}`);
             this.participants = data.participants || [];
@@ -363,7 +345,6 @@ class EnhancedVideoCallManager {
                 this.callbacks.onParticipantsChange(this.participants);
             }
 
-            // Si somos host y hay otros participantes, iniciar conexión
             if (this.isHost && this.participants.length > 1 && this.mediaReady) {
                 setTimeout(() => this._initiatePeerConnection(), 1000);
             }
@@ -380,7 +361,6 @@ class EnhancedVideoCallManager {
             this._clearRemoteStream();
         });
 
-        // Eventos WebRTC signaling
         this.socket.on('offer', async (data) => {
             if (data.from !== this.socket.id) {
                 this._log(`📥 Received offer from ${data.from}`);
@@ -402,7 +382,6 @@ class EnhancedVideoCallManager {
             }
         });
 
-        // ADDED: Manejo de notificaciones de escaneo
         this.socket.on('scan-notification', (notification) => {
             this._log(`📢 Received scan notification: ${JSON.stringify(notification)}`);
             if (this.callbacks.onScanNotification && notification.from !== this.socket.id) {
@@ -410,7 +389,6 @@ class EnhancedVideoCallManager {
             }
         });
 
-        // Heartbeat
         this.socket.on('heartbeat-ack', () => {
             this._log('💓 Heartbeat acknowledged');
         });
@@ -432,7 +410,6 @@ class EnhancedVideoCallManager {
         }, 30000);
     }
 
-    // 🔧 FIXED: Unirse al room con mejor manejo de errores
     async joinRoom(roomId, userName) {
         try {
             this._setState('joining_room');
@@ -477,25 +454,21 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
             this._setState('requesting_media');
             this._log('🎥 Setting up local media...');
 
-            // Verificar contexto seguro
             if (!window.isSecureContext && 
                 window.location.protocol !== 'https:' && 
                 !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
                 throw new Error('HTTPS required for camera access');
             }
 
-            // Verificar soporte del navegador
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('Browser does not support camera access');
             }
 
-            // Verificar permisos
             try {
                 const permissions = await navigator.permissions.query({ name: 'camera' });
                 if (permissions.state === 'denied') {
@@ -505,9 +478,7 @@ class EnhancedVideoCallManager {
                 this._log('Cannot check permissions directly, proceeding...', 'warn');
             }
 
-            // Configuración de constraints progresiva
             const constraintSets = [
-                // Configuración óptima
                 {
                     video: {
                         width: { ideal: 640, min: 320, max: 1280 },
@@ -521,7 +492,6 @@ class EnhancedVideoCallManager {
                         autoGainControl: true
                     }
                 },
-                // Configuración básica
                 {
                     video: {
                         width: { ideal: 320, min: 160 },
@@ -530,12 +500,10 @@ class EnhancedVideoCallManager {
                     },
                     audio: true
                 },
-                // Configuración mínima
                 {
                     video: true,
                     audio: true
                 },
-                // Solo video
                 {
                     video: true,
                     audio: false
@@ -566,7 +534,7 @@ class EnhancedVideoCallManager {
                     this._log(`Constraints set ${i + 1} failed: ${error.message}`, 'warn');
                     
                     if (error.name === 'NotAllowedError') {
-                        break; // No intentar más si se deniegan permisos
+                        break;
                     }
                 }
             }
@@ -579,7 +547,6 @@ class EnhancedVideoCallManager {
             this.mediaReady = true;
             this.diagnostics.mediaGranted = true;
 
-            // Llamar callback inmediatamente
             if (this.callbacks.onLocalStream) {
                 this.callbacks.onLocalStream(stream);
             }
@@ -596,13 +563,11 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Configuración de peer connection mejorada
     async _initiatePeerConnection() {
         try {
             this._setState('creating_peer_connection');
             this._log('🔗 Creating peer connection...');
 
-            // Limpiar conexión anterior
             if (this.peerConnection) {
                 this.peerConnection.close();
                 this.peerConnection = null;
@@ -617,7 +582,6 @@ class EnhancedVideoCallManager {
 
             this._setupPeerConnectionEvents();
 
-            // Agregar tracks locales
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => {
                     this._log(`➕ Adding ${track.kind} track`);
@@ -625,7 +589,6 @@ class EnhancedVideoCallManager {
                 });
             }
 
-            // Crear offer si somos host
             if (this.isHost) {
                 await this._createOffer();
             }
@@ -767,7 +730,6 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // ADDED: Enviar notificaciones de escaneo
     async sendScanNotification(notification) {
         try {
             if (!this.socket || !this.socket.connected) {
@@ -788,7 +750,6 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // 🔧 FIXED: Inicialización completa
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
             this._log(`🚀 Initializing as ${isHost ? 'HOST' : 'GUEST'}`);
@@ -798,16 +759,10 @@ class EnhancedVideoCallManager {
             this.isHost = isHost;
             this.callbacks = { ...this.callbacks, ...callbacks };
             
-            // 1. Conectar al servidor
             await this.connectToSignaling();
-            
-            // 2. Unirse al room
             await this.joinRoom(roomId, userName);
-            
-            // 3. Configurar medios
             await this.setupLocalMedia();
             
-            // 4. Si hay otros participantes, iniciar peer connection
             if (this.participants.length > 1) {
                 await this._initiatePeerConnection();
             }
@@ -824,7 +779,6 @@ class EnhancedVideoCallManager {
         }
     }
 
-    // Control de medios
     toggleVideo() {
         if (this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
@@ -849,7 +803,6 @@ class EnhancedVideoCallManager {
         return false;
     }
 
-    // Información de debug
     getDebugInfo() {
         return {
             connectionState: this.connectionState,
@@ -870,7 +823,6 @@ class EnhancedVideoCallManager {
         };
     }
 
-    // Limpieza
     cleanup() {
         this._log('🧹 Cleaning up...');
 
@@ -906,10 +858,8 @@ class EnhancedVideoCallManager {
     }
 }
 
-// Instancia global
 let enhancedVideoCallManager = null;
 
-// Función principal de inicialización
 export async function initializeEnhancedVideoCall(roomId, userName, isHost, callbacks = {}) {
     try {
         console.log('🚀 Starting Enhanced VideoCallManager...');
@@ -951,3 +901,13 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
+
+// Return explícito para compatibilidad con Render
+return {
+    initializeEnhancedVideoCall,
+    getEnhancedDebugInfo,
+    toggleEnhancedVideo,
+    toggleEnhancedAudio,
+    cleanupEnhancedVideoCall,
+    EnhancedVideoCallManager
+};
