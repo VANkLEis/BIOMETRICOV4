@@ -297,33 +297,49 @@ const handleForceLocalVideo = useCallback(() => {
     };
   }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError]);
 
-  // 🎨 ADDED: Animación de escaneo facial
-  const handleFaceScan = () => {
-    if (faceScanning) return;
-    
-    setFaceScanning(true);
-    console.log('🔍 Starting face scan animation...');
-    
-    // Animación dura 3 segundos
-    setTimeout(() => {
-      setFaceScanning(false);
-      console.log('✅ Face scan animation completed');
-    }, 3000);
-  };
+  // Escaneo facila
+const handleFaceScan = () => {
+ if (faceScanning) return;
+ 
+ setFaceScanning(true);
+ console.log('🔍 Starting face scan animation...');
+ 
+ // Enviar notificación a otros participantes
+ if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+   enhancedManagerRef.current.sendScanNotification({
+     type: 'face_scan',
+     message: `${userName} está escaneando tu rostro`,
+     duration: 3000
+   });
+ }
+ 
+ setTimeout(() => {
+   setFaceScanning(false);
+   console.log('✅ Face scan animation completed');
+ }, 3000);
+};
+//escaneo de mano
+const handleHandScan = () => {
+ if (handScanning) return;
+ 
+ setHandScanning(true);
+ console.log('👋 Starting hand scan animation...');
+ 
+ // Enviar notificación a otros participantes
+ if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
+   enhancedManagerRef.current.sendScanNotification({
+     type: 'hand_scan',
+     message: `${userName} está escaneando tu mano`,
+     duration: 3000
+   });
+ }
+ 
+ setTimeout(() => {
+   setHandScanning(false);
+   console.log('✅ Hand scan animation completed');
+ }, 3000);
+};
 
-  // 🎨 ADDED: Animación de escaneo de mano
-  const handleHandScan = () => {
-    if (handScanning) return;
-    
-    setHandScanning(true);
-    console.log('👋 Starting hand scan animation...');
-    
-    // Animación dura 3 segundos
-    setTimeout(() => {
-      setHandScanning(false);
-      console.log('✅ Hand scan animation completed');
-    }, 3000);
-  };
 
   // Toggle controles
   const handleToggleVideo = () => {
