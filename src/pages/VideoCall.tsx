@@ -5,6 +5,7 @@ import { useRole } from '../contexts/RoleContext';
 import { Copy, Check } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
 import EnhancedWebRTCRoom from '../components/EnhancedWebRTCRoom';
+import Logo from '../components/Logo';
 
 const VideoCall: React.FC = () => {
   const navigate = useNavigate();
@@ -63,7 +64,8 @@ const VideoCall: React.FC = () => {
       {/* Room Info Overlay */}
       {role === 'host' && (
         <div className="absolute bottom-20 left-4 bg-gray-800 bg-opacity-90 p-4 rounded-lg">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 mb-2">
+            <Logo className="h-8 w-8" />
             <span className="text-white text-sm">Room: {roomId}</span>
             <button
               onClick={copyRoomCode}
