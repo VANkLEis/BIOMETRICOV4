@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
-import { Copy, Check } from 'lucide-react';
 import RoleSelector from '../components/RoleSelector';
 import EnhancedWebRTCRoom from '../components/EnhancedWebRTCRoom';
 import Logo from '../components/Logo';
@@ -64,19 +63,14 @@ const VideoCall: React.FC = () => {
       {/* Room Info Overlay */}
       {role === 'host' && (
         <div className="absolute bottom-20 left-4 bg-gray-800 bg-opacity-90 p-4 rounded-lg">
-          <div className="flex items-center space-x-2 mb-2">
-            <Logo className="h-8 w-8" />
+          <div className="flex items-center space-x-2">
             <span className="text-white text-sm">Room: {roomId}</span>
             <button
               onClick={copyRoomCode}
               className="p-1 rounded bg-blue-600 hover:bg-blue-700 transition-colors"
               title="Copy room code"
             >
-              {copied ? (
-                <Check className="h-4 w-4 text-white" />
-              ) : (
-                <Copy className="h-4 w-4 text-white" />
-              )}
+              <Logo className="h-4 w-4 text-white" />
             </button>
           </div>
         </div>
