@@ -164,7 +164,7 @@ const Dashboard: React.FC = () => {
                     Generate Room Code
                   </button>
                 </div>
-              </legd>
+              </div>
             </div>
           </div>
         </div>
