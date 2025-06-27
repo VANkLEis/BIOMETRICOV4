@@ -40,11 +40,12 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [showLocalVideo, setShowLocalVideo] = useState(true);
   const [forceLocalVideoVisible, setForceLocalVideoVisible] = useState(false);
 
-  // Estado para notificaciones recibidas
+  // 🔧 FIXED: Estado para notificaciones recibidas con mejor tipado
   const [receivedNotification, setReceivedNotification] = useState<{
     type: string;
     message: string;
     timestamp: number;
+    fromName?: string;
   } | null>(null);
 
   // Actualizar tiempo transcurrido
@@ -194,21 +195,26 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setConnectionState('error');
   }, []);
 
-  // Callback para manejar notificaciones de escaneo
+  // 🔧 FIXED: Callback para manejar notificaciones de escaneo con mejor logging
   const handleScanNotification = useCallback((notification: any) => {
     console.log('📢 SCAN: Notification received:', notification);
+    
     if (notification && notification.type && notification.message) {
+      console.log(`📢 SCAN: Processing ${notification.type} from ${notification.fromName || 'unknown'}`);
+      
       setReceivedNotification({
         type: notification.type,
         message: notification.message,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        fromName: notification.fromName
       });
       
       // Auto-ocultar después de la duración especificada
+      const duration = notification.duration || 5000;
       setTimeout(() => {
         setReceivedNotification(null);
-        console.log('📢 SCAN: Notification cleared');
-      }, notification.duration || 3000);
+        console.log('📢 SCAN: Notification cleared after', duration, 'ms');
+      }, duration);
     } else {
       console.error('📢 SCAN: Invalid notification format:', notification);
     }
@@ -250,14 +256,15 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         
         console.log(`🎭 Role determined - ${isHost ? 'HOST' : 'GUEST'}`);
         
-      const callbacks = {
-    onLocalStream: handleLocalStream,
-    onRemoteStream: handleRemoteStream,
-    onStateChange: handleStateChange,
-    onParticipantsChange: handleParticipantsChange,
-    onError: handleError,
-    onScanNotification: handleScanNotification  // Tu callback existente
-};
+        // 🔧 FIXED: Configurar callbacks incluyendo onScanNotification
+        const callbacks = {
+          onLocalStream: handleLocalStream,
+          onRemoteStream: handleRemoteStream,
+          onStateChange: handleStateChange,
+          onParticipantsChange: handleParticipantsChange,
+          onError: handleError,
+          onScanNotification: handleScanNotification
+        };
         
         const manager = await initializeEnhancedVideoCall(roomId, userName, isHost, callbacks);
         enhancedManagerRef.current = manager;
@@ -315,23 +322,26 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     };
   }, [roomId, userName, handleLocalStream, handleRemoteStream, handleStateChange, handleParticipantsChange, handleError, handleScanNotification]);
 
-  // Escaneo facial
-  const handleFaceScan = () => {
+  // 🔧 FIXED: Escaneo facial con envío de notificación
+  const handleFaceScan = async () => {
     if (faceScanning) return;
     
     setFaceScanning(true);
     console.log('🔍 Starting face scan animation...');
     
-    // Enviar notificación a otros participantes
+    // 🔧 FIXED: Enviar notificación a otros participantes
     if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
-      console.log('📢 SCAN: Sending face scan notification');
-      enhancedManagerRef.current.sendScanNotification({
-        type: 'face_scan',
-        message: `${userName} está escaneando tu rostro`,
-        duration: 5000 // Aumentado para mayor visibilidad
-      }).catch((err: any) => {
+      try {
+        console.log('📢 SCAN: Sending face scan notification');
+        await enhancedManagerRef.current.sendScanNotification({
+          type: 'face_scan',
+          message: `${userName} está escaneando tu rostro para verificación biométrica`,
+          duration: 5000
+        });
+        console.log('✅ SCAN: Face scan notification sent successfully');
+      } catch (err: any) {
         console.error('❌ SCAN: Failed to send face scan notification:', err);
-      });
+      }
     } else {
       console.error('❌ SCAN: sendScanNotification not available');
     }
@@ -342,23 +352,26 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     }, 5000);
   };
 
-  // Escaneo de mano
-  const handleHandScan = () => {
+  // 🔧 FIXED: Escaneo de mano con envío de notificación
+  const handleHandScan = async () => {
     if (handScanning) return;
     
     setHandScanning(true);
     console.log('👋 Starting hand scan animation...');
     
-    // Enviar notificación a otros participantes
+    // 🔧 FIXED: Enviar notificación a otros participantes
     if (enhancedManagerRef.current && enhancedManagerRef.current.sendScanNotification) {
-      console.log('📢 SCAN: Sending hand scan notification');
-      enhancedManagerRef.current.sendScanNotification({
-        type: 'hand_scan',
-        message: `${userName} está escaneando tu mano`,
-        duration: 5000 // Aumentado para mayor visibilidad
-      }).catch((err: any) => {
+      try {
+        console.log('📢 SCAN: Sending hand scan notification');
+        await enhancedManagerRef.current.sendScanNotification({
+          type: 'hand_scan',
+          message: `${userName} está escaneando tu mano para verificación biométrica`,
+          duration: 5000
+        });
+        console.log('✅ SCAN: Hand scan notification sent successfully');
+      } catch (err: any) {
         console.error('❌ SCAN: Failed to send hand scan notification:', err);
-      });
+      }
     } else {
       console.error('❌ SCAN: sendScanNotification not available');
     }
@@ -657,7 +670,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-green-400 border-dashed animate-pulse">
+              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-green-400 animate-pulse">
                 <div 
                   className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
                   style={{
@@ -690,7 +703,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         {handScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-blue-400 border-dashed animate-pulse">
+              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-blue-400 animate-pulse">
                 <div 
                   className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
                   style={{
@@ -723,7 +736,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           </div>
         )}
 
-        {/* Notificación de escaneo recibido - Mejorada */}
+        {/* 🔧 FIXED: Notificación de escaneo recibido - Mejorada con información del remitente */}
         {receivedNotification && (
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
             <div className={`bg-opacity-95 text-white px-10 py-8 rounded-xl shadow-2xl border-4 ${
@@ -734,8 +747,13 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
                   {receivedNotification.type === 'face_scan' ? '🔍' : '👋'}
                 </div>
                 <div className="text-2xl font-bold mb-3">¡ALERTA DE ESCANEO!</div>
-                <div className="text-lg">{receivedNotification.message}</div>
-                <div className="mt-4 text-base font-medium opacity-80">
+                <div className="text-lg mb-2">{receivedNotification.message}</div>
+                {receivedNotification.fromName && (
+                  <div className="text-sm opacity-80 mb-3">
+                    De: {receivedNotification.fromName}
+                  </div>
+                )}
+                <div className="text-base font-medium opacity-80">
                   {receivedNotification.type === 'face_scan' ? 'Análisis facial en progreso...' : 'Análisis biométrico en progreso...'}
                 </div>
               </div>
@@ -784,7 +802,8 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
               <p>🔧 Local Video Element: {localVideoRef.current?.srcObject ? '✅' : '❌'}</p>
               <p>🔧 Local Video Playing: {localVideoRef.current && !localVideoRef.current.paused ? '✅' : '❌'}</p>
               <p>🔧 Local Video Visible: {showLocalVideo ? '✅' : '❌'}</p>
-              <p>📢 Notification: {receivedNotification ? JSON.stringify(receivedNotification) : 'None'}</p>
+              <p>📢 Scan Callback: {debugInfo.scanNotificationCallback ? '✅' : '❌'}</p>
+              <p>📢 Notification: {receivedNotification ? `${receivedNotification.type} from ${receivedNotification.fromName}` : 'None'}</p>
               {debugInfo.diagnostics && (
                 <div className="mt-2 pt-2 border-t border-gray-600">
                   <p className="font-semibold">Diagnostics:</p>
@@ -939,6 +958,13 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
               <span>Escaneando...</span>
+            </div>
+          )}
+
+          {receivedNotification && (
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+              <span>Siendo Escaneado</span>
             </div>
           )}
         </div>
