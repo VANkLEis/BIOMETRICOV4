@@ -726,6 +726,26 @@ const handleScanNotification = useCallback((notification: any) => {
           </div>
         )}
 
+{/* NOTIFICACIÓN DE ESCANEO RECIBIDO */}
+{receivedNotification && (
+ <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50">
+   <div className={`bg-red-600 bg-opacity-95 text-white px-8 py-6 rounded-lg shadow-2xl border-4 ${
+     receivedNotification.type === 'face_scan' ? 'border-green-400' : 'border-blue-400'
+   } animate-pulse`}>
+     <div className="text-center">
+       <div className="text-2xl mb-2">
+         {receivedNotification.type === 'face_scan' ? '🔍' : '👋'}
+       </div>
+       <div className="text-lg font-bold mb-2">¡ALERTA DE ESCANEO!</div>
+       <div className="text-base">{receivedNotification.message}</div>
+       <div className="mt-3 text-sm opacity-75">
+         {receivedNotification.type === 'face_scan' ? 'Análisis facial en progreso...' : 'Análisis biométrico en progreso...'}
+       </div>
+     </div>
+   </div>
+ </div>
+)}
+
         {/* INDICADORES SUPERIORES */}
         <div className="absolute top-4 left-4 z-30">
           <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
