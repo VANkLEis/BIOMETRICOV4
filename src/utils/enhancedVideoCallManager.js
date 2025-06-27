@@ -951,13 +951,3 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
-
-// ADDED: Return explícito para compatibilidad con Render
-return {
-    initializeEnhancedVideoCall,
-    getEnhancedDebugInfo,
-    toggleEnhancedVideo,
-    toggleEnhancedAudio,
-    cleanupEnhancedVideoCall,
-    EnhancedVideoCallManager
-};
