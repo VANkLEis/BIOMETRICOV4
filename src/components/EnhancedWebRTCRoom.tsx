@@ -192,6 +192,28 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setConnectionState('error');
   }, []);
 
+  // Agregar después de los callbacks existentes, antes de la inicialización
+const handleForceLocalVideo = useCallback(() => {
+ console.log('🔧 FORCE: Forcing local video to be visible and playing');
+ setForceLocalVideoVisible(true);
+ setShowLocalVideo(true);
+ 
+ // Forzar reinicialización del video local
+ if (localVideoRef.current && localStream) {
+   console.log('🔧 FORCE: Re-assigning local stream');
+   localVideoRef.current.srcObject = localStream;
+   localVideoRef.current.muted = true;
+   
+   localVideoRef.current.play().then(() => {
+     console.log('✅ FORCE: Local video forced to play successfully');
+     setForceLocalVideoVisible(false);
+   }).catch(error => {
+     console.error('❌ FORCE: Force play failed:', error);
+     setForceLocalVideoVisible(false);
+   });
+ }
+}, [localStream]);
+
   // Inicialización automática
   useEffect(() => {
     const initializeCall = async () => {
