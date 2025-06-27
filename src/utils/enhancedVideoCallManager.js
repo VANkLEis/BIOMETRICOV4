@@ -1,6 +1,5 @@
-```javascript
 /**
- * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED + SCAN NOTIFICATIONS + SYNTAX FIX
+ * ENHANCED VIDEO CALL MANAGER - GUEST CONNECTION FIXED
  * 
  * PROBLEMAS IDENTIFICADOS Y SOLUCIONADOS:
  * 1. ✅ GUEST no puede conectarse al servidor (timeout/error)
@@ -10,12 +9,9 @@
  * 5. ✅ Mejor manejo de errores específicos para GUEST
  * 6. ✅ Fallbacks automáticos cuando WebRTC falla
  * 7. ✅ Diagnóstico completo de conectividad
- * 8. ✅ Notificaciones de escaneo (face/hand) para todos los participantes
- * 9. ✅ Corregido error de sintaxis en _log
- * 10. ✅ Añadido return explícito para compatibilidad con Render
  * 
  * @author SecureCall Team
- * @version 7.1.2 - SCAN NOTIFICATIONS + SYNTAX FIX + RETURN
+ * @version 7.0.0 - GUEST CONNECTION FULLY FIXED
  */
 
 import { io } from 'socket.io-client';
@@ -31,16 +27,18 @@ class EnhancedVideoCallManager {
         this.userName = null;
         this.connectionState = 'idle';
         
+        // 🔧 CRITICAL: Callbacks para UI
         this.callbacks = {
             onLocalStream: null,
             onRemoteStream: null,
             onStateChange: null,
             onParticipantsChange: null,
-            onError: null,
-            onScanNotification: null
+            onError: null
         };
         
+        // 🔧 FIXED: Configuración mejorada para guests
         this.config = {
+            // Servidores STUN/TURN más robustos
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
@@ -63,20 +61,24 @@ class EnhancedVideoCallManager {
                     credential: 'openrelayproject'
                 }
             ],
+            // Timeouts más generosos para guests
             connectionTimeout: 30000,
             mediaTimeout: 45000,
             iceTimeout: 20000,
             signalingTimeout: 15000,
+            // Reintentos automáticos
             maxRetries: 5,
             retryDelay: 2000
         };
         
+        // Estados de conexión
         this.connectionAttempts = 0;
         this.lastError = null;
         this.participants = [];
         this.isConnecting = false;
         this.mediaReady = false;
         
+        // 🔧 ADDED: Diagnóstico de conectividad
         this.diagnostics = {
             serverReachable: false,
             socketConnected: false,
@@ -95,22 +97,7 @@ class EnhancedVideoCallManager {
         if (this.debugMode) {
             const timestamp = new Date().toISOString();
             const role = this.isHost ? 'HOST' : 'GUEST';
-            // Usar métodos explícitos de console para evitar errores de sintaxis
-            switch (level) {
-                case 'error':
-                    console.error(`[${role} ${timestamp}] ${message}`);
-                    break;
-                case 'warn':
-                    console.warn(`[${role} ${timestamp}] ${message}`);
-                    break;
-                case 'debug':
-                    console.debug(`[${role} ${timestamp}] ${message}`);
-                    break;
-                case 'info':
-                default:
-                    console.log(`[${role} ${timestamp}] ${message}`);
-                    break;
-            }
+            console[level](`[${role} ${timestamp}] ${message}`);
         }
     }
 
@@ -162,6 +149,7 @@ class EnhancedVideoCallManager {
         return suggestions;
     }
 
+    // 🔧 FIXED: Diagnóstico completo de conectividad
     async runConnectivityDiagnostic() {
         this._log('🔍 Running comprehensive connectivity diagnostic...');
         
@@ -190,6 +178,7 @@ class EnhancedVideoCallManager {
             }
         };
 
+        // Test server connectivity
         try {
             const serverUrl = this._getServerUrl();
             const startTime = Date.now();
@@ -213,6 +202,7 @@ class EnhancedVideoCallManager {
             this.diagnostics.serverReachable = false;
         }
 
+        // Test media permissions
         try {
             const permissions = await navigator.permissions.query({ name: 'camera' });
             results.media.permissionState = permissions.state;
@@ -240,6 +230,7 @@ class EnhancedVideoCallManager {
             'https://biometricov4.onrender.com';
     }
 
+    // 🔧 FIXED: Conexión al servidor con reintentos automáticos
     async connectToSignaling() {
         if (this.isConnecting) {
             this._log('⚠️ Already connecting to signaling server');
@@ -253,6 +244,7 @@ class EnhancedVideoCallManager {
             this._setState('connecting_signaling');
             this._log(`🔗 Connecting to signaling server (attempt ${this.connectionAttempts}/${this.config.maxRetries})`);
 
+            // Ejecutar diagnóstico si es el primer intento
             if (this.connectionAttempts === 1) {
                 await this.runConnectivityDiagnostic();
             }
@@ -266,12 +258,14 @@ class EnhancedVideoCallManager {
             this._setState('signaling_connected');
             this._log('✅ Successfully connected to signaling server');
             
+            // Iniciar heartbeat
             this._startHeartbeat();
             
         } catch (error) {
             this.diagnostics.socketConnected = false;
             this._handleError(error, 'server_connection');
             
+            // Reintentar si no hemos alcanzado el máximo
             if (this.connectionAttempts < this.config.maxRetries) {
                 this._log(`🔄 Retrying connection in ${this.config.retryDelay}ms...`);
                 setTimeout(() => {
@@ -293,6 +287,7 @@ class EnhancedVideoCallManager {
                 reject(new Error('Connection timeout - server may be starting up'));
             }, this.config.connectionTimeout);
 
+            // Limpiar socket anterior
             if (this.socket) {
                 this.socket.disconnect();
                 this.socket = null;
@@ -351,10 +346,12 @@ class EnhancedVideoCallManager {
     }
 
     _setupSocketEvents() {
+        // Confirmación de conexión
         this.socket.on('connection-confirmed', (data) => {
             this._log(`✅ Connection confirmed: ${data.message}`);
         });
 
+        // Eventos de room
         this.socket.on('user-joined', (data) => {
             this._log(`👤 User joined: ${JSON.stringify(data)}`);
             this.participants = data.participants || [];
@@ -363,6 +360,7 @@ class EnhancedVideoCallManager {
                 this.callbacks.onParticipantsChange(this.participants);
             }
 
+            // Si somos host y hay otros participantes, iniciar conexión
             if (this.isHost && this.participants.length > 1 && this.mediaReady) {
                 setTimeout(() => this._initiatePeerConnection(), 1000);
             }
@@ -379,6 +377,7 @@ class EnhancedVideoCallManager {
             this._clearRemoteStream();
         });
 
+        // Eventos WebRTC signaling
         this.socket.on('offer', async (data) => {
             if (data.from !== this.socket.id) {
                 this._log(`📥 Received offer from ${data.from}`);
@@ -400,13 +399,7 @@ class EnhancedVideoCallManager {
             }
         });
 
-        this.socket.on('scan-notification', (notification) => {
-            this._log(`📢 Received scan notification: ${JSON.stringify(notification)}`);
-            if (this.callbacks.onScanNotification && notification.from !== this.socket.id) {
-                this.callbacks.onScanNotification(notification);
-            }
-        });
-
+        // Heartbeat
         this.socket.on('heartbeat-ack', () => {
             this._log('💓 Heartbeat acknowledged');
         });
@@ -428,6 +421,7 @@ class EnhancedVideoCallManager {
         }, 30000);
     }
 
+    // 🔧 FIXED: Unirse al room con mejor manejo de errores
     async joinRoom(roomId, userName) {
         try {
             this._setState('joining_room');
@@ -472,21 +466,25 @@ class EnhancedVideoCallManager {
         }
     }
 
+    // 🔧 FIXED: Configuración de medios con mejor manejo para guests
     async setupLocalMedia() {
         try {
             this._setState('requesting_media');
             this._log('🎥 Setting up local media...');
 
+            // Verificar contexto seguro
             if (!window.isSecureContext && 
                 window.location.protocol !== 'https:' && 
                 !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
                 throw new Error('HTTPS required for camera access');
             }
 
+            // Verificar soporte del navegador
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('Browser does not support camera access');
             }
 
+            // Verificar permisos
             try {
                 const permissions = await navigator.permissions.query({ name: 'camera' });
                 if (permissions.state === 'denied') {
@@ -496,7 +494,9 @@ class EnhancedVideoCallManager {
                 this._log('Cannot check permissions directly, proceeding...', 'warn');
             }
 
+            // Configuración de constraints progresiva
             const constraintSets = [
+                // Configuración óptima
                 {
                     video: {
                         width: { ideal: 640, min: 320, max: 1280 },
@@ -510,6 +510,7 @@ class EnhancedVideoCallManager {
                         autoGainControl: true
                     }
                 },
+                // Configuración básica
                 {
                     video: {
                         width: { ideal: 320, min: 160 },
@@ -518,10 +519,12 @@ class EnhancedVideoCallManager {
                     },
                     audio: true
                 },
+                // Configuración mínima
                 {
                     video: true,
                     audio: true
                 },
+                // Solo video
                 {
                     video: true,
                     audio: false
@@ -552,7 +555,7 @@ class EnhancedVideoCallManager {
                     this._log(`Constraints set ${i + 1} failed: ${error.message}`, 'warn');
                     
                     if (error.name === 'NotAllowedError') {
-                        break;
+                        break; // No intentar más si se deniegan permisos
                     }
                 }
             }
@@ -565,6 +568,7 @@ class EnhancedVideoCallManager {
             this.mediaReady = true;
             this.diagnostics.mediaGranted = true;
 
+            // Llamar callback inmediatamente
             if (this.callbacks.onLocalStream) {
                 this.callbacks.onLocalStream(stream);
             }
@@ -581,11 +585,13 @@ class EnhancedVideoCallManager {
         }
     }
 
+    // 🔧 FIXED: Configuración de peer connection mejorada
     async _initiatePeerConnection() {
         try {
             this._setState('creating_peer_connection');
             this._log('🔗 Creating peer connection...');
 
+            // Limpiar conexión anterior
             if (this.peerConnection) {
                 this.peerConnection.close();
                 this.peerConnection = null;
@@ -600,6 +606,7 @@ class EnhancedVideoCallManager {
 
             this._setupPeerConnectionEvents();
 
+            // Agregar tracks locales
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => {
                     this._log(`➕ Adding ${track.kind} track`);
@@ -607,6 +614,7 @@ class EnhancedVideoCallManager {
                 });
             }
 
+            // Crear offer si somos host
             if (this.isHost) {
                 await this._createOffer();
             }
@@ -748,26 +756,7 @@ class EnhancedVideoCallManager {
         }
     }
 
-    async sendScanNotification(notification) {
-        try {
-            if (!this.socket || !this.socket.connected) {
-                throw new Error('Not connected to signaling server');
-            }
-            this._log(`📢 Sending scan notification: ${JSON.stringify(notification)}`);
-            this.socket.emit('scan-notification', {
-                roomId: this.roomId,
-                notification: {
-                    ...notification,
-                    from: this.socket.id
-                }
-            });
-            return true;
-        } catch (error) {
-            this._log(`❌ Failed to send scan notification: ${error.message}`, 'error');
-            throw error;
-        }
-    }
-
+    // 🔧 FIXED: Inicialización completa
     async initialize(roomId, userName, isHost, callbacks = {}) {
         try {
             this._log(`🚀 Initializing as ${isHost ? 'HOST' : 'GUEST'}`);
@@ -777,10 +766,16 @@ class EnhancedVideoCallManager {
             this.isHost = isHost;
             this.callbacks = { ...this.callbacks, ...callbacks };
             
+            // 1. Conectar al servidor
             await this.connectToSignaling();
+            
+            // 2. Unirse al room
             await this.joinRoom(roomId, userName);
+            
+            // 3. Configurar medios
             await this.setupLocalMedia();
             
+            // 4. Si hay otros participantes, iniciar peer connection
             if (this.participants.length > 1) {
                 await this._initiatePeerConnection();
             }
@@ -797,6 +792,7 @@ class EnhancedVideoCallManager {
         }
     }
 
+    // Control de medios
     toggleVideo() {
         if (this.localStream) {
             const videoTrack = this.localStream.getVideoTracks()[0];
@@ -821,6 +817,7 @@ class EnhancedVideoCallManager {
         return false;
     }
 
+    // Información de debug
     getDebugInfo() {
         return {
             connectionState: this.connectionState,
@@ -841,6 +838,7 @@ class EnhancedVideoCallManager {
         };
     }
 
+    // Limpieza
     cleanup() {
         this._log('🧹 Cleaning up...');
 
@@ -876,8 +874,10 @@ class EnhancedVideoCallManager {
     }
 }
 
+// Instancia global
 let enhancedVideoCallManager = null;
 
+// Función principal de inicialización
 export async function initializeEnhancedVideoCall(roomId, userName, isHost, callbacks = {}) {
     try {
         console.log('🚀 Starting Enhanced VideoCallManager...');
@@ -919,105 +919,3 @@ export function cleanupEnhancedVideoCall() {
 }
 
 export default EnhancedVideoCallManager;
-
-// Añadido return explícito para compatibilidad con Render
-return {
-    initializeEnhancedVideoCall,
-    getEnhancedDebugInfo,
-    toggleEnhancedVideo,
-    toggleEnhancedAudio,
-    cleanupEnhancedVideoCall,
-    EnhancedVideoCallManager
-};
-```
-
-### Cambios Realizados
-1. **Corrección del método `_log`**:
-   - Reemplacé la notación de índice dinámico (`console[consoleLevel]`) con un `switch` explícito que usa `console.log`, `console.error`, `console.warn`, y `console.debug` directamente.
-   - Esto elimina cualquier posibilidad de errores de sintaxis relacionados con la notación de índice, que parece ser problemática en el entorno de Vite/Render.
-2. **Verificación de la sintaxis**:
-   - Revisé los objetos `callbacks`, `config`, y `diagnostics` para asegurar que no haya corchetes o llaves desbalanceados.
-   - Todas las definiciones de objetos están correctamente cerradas, y no hay errores evidentes en las líneas previas a `_log`.
-3. **Añadido `return` explícito**:
-   - Al final del archivo, agregué un `return` que exporta un objeto con todas las funciones y la clase, cumpliendo con el requisito mencionado de que "el código debe terminar con un `return`".
-   - Esto asegura compatibilidad con el entorno de Render, que podría estar esperando un módulo con un valor retornado explícito.
-4. **Versión actualizada**:
-   - Cambié la versión a `7.1.2` para reflejar la corrección del error de sintaxis y la adición del `return` explícito.
-5. **Sin cambios en `sendScanNotification`**:
-   - La funcionalidad de notificaciones de escaneo permanece intacta, ya que no está relacionada con el error de sintaxis.
-
-### Pasos para Implementar y Verificar
-1. **Reemplaza el archivo**:
-   - Copia el código de `enhancedVideoCallManager.js` proporcionado arriba.
-   - Pégalo en `/opt/render/project/src/src/utils/enhancedVideoCallManager.js` en tu entorno de Render.
-   - Asegúrate de que no se introduzcan caracteres adicionales (espacios, tabulaciones, o caracteres invisibles). Usa un editor como VS Code con la opción de "mostrar caracteres invisibles" para verificar.
-
-2. **Reconstruye la aplicación**:
-   - Ejecuta el comando de construcción en tu entorno de Render:
-     ```bash
-     npm run build
-     ```
-   - Verifica que no aparezcan errores de sintaxis durante la construcción.
-
-3. **Prueba las notificaciones**:
-   - Despliega la aplicación en Render o prueba localmente si es posible.
-   - Une dos clientes a la misma sala (`roomId`).
-   - En el cliente iniciador:
-     - Haz clic en el botón de escaneo facial o de mano.
-     - Verifica en la consola: `📢 Sending scan notification: { type: 'face_scan', message: '[userName] está escaneando tu rostro', duration: 5000 }`.
-   - En el cliente remoto:
-     - Busca en la consola: `📢 Received scan notification: { type: 'face_scan', message: '[userName] está escaneando tu rostro', duration: 5000, from: '[socketId]' }`.
-     - Confirma que la notificación aparece en el centro de la pantalla.
-     - Revisa el panel de depuración (`Show Enhanced Debug`) para asegurar que "Notification" muestra los detalles de la notificación en lugar de "none".
-
-4. **Verifica el servidor**:
-   - Asegúrate de que el servidor en `https://biometricov4.onrender.com` (o `http://localhost:3000` si pruebas localmente) esté configurado para manejar el evento `scan-notification`. Usa el código del servidor proporcionado anteriormente:
-     ```javascript
-     socket.on('scan-notification', ({ roomId, notification }) => {
-       console.log(`Broadcasting scan notification to room ${roomId}:`, notification);
-       socket.to(roomId).emit('scan-notification', notification);
-     });
-     ```
-   - Verifica los logs del servidor para confirmar que el evento `scan-notification` se recibe y retransmite.
-
-5. **Depura si persiste el error**:
-   - **Si el error de sintaxis persiste**:
-     - Comparte las líneas 95-105 de `enhancedVideoCallManager.js` desde tu entorno de Render para verificar el contexto exacto.
-     - Revisa si hay caracteres invisibles o errores de formato al copiar el código. Puedes pegar el código en un editor como VS Code y usar la extensión "Highlight Bad Chars" para detectar problemas.
-   - **Si las notificaciones no funcionan**:
-     - Revisa la consola del cliente iniciador para errores como `❌ Failed to send scan notification`.
-     - Revisa la consola del cliente remoto para confirmar si se recibe `📢 Received scan notification`.
-     - Verifica los logs del servidor para asegurarte de que el evento `scan-notification` se procesa correctamente.
-   - **Si el servidor no responde**:
-     - Confirma que los clientes están conectados a la URL correcta (`https://biometricov4.onrender.com` o `http://localhost:3000`).
-     - Revisa la pestaña Network en DevTools para verificar las conexiones WebSocket.
-
-### Notas Adicionales
-- **Entorno de Render**: Render puede ser estricto con la sintaxis de los módulos ES. El `return` explícito al final debería resolver cualquier problema relacionado con el requisito de un valor retornado.
-- **Dependencias**: Asegúrate de que `socket.io-client` esté instalado en tu proyecto:
-  ```bash
-  npm install socket.io-client
-  ```
-- **Servidor**: Si no controlas `https://biometricov4.onrender.com`, verifica con el administrador que el evento `scan-notification` esté implementado. Si pruebas localmente, asegúrate de que el servidor esté corriendo (`npm install express socket.io && node server.js`).
-- **Compatibilidad con Vite**: La notación de índice dinámico (`console[consoleLevel]`) puede causar problemas en algunos entornos de Vite debido a optimizaciones estrictas. El uso de `switch` en `_log` debería ser más robusto.
-
-### Si el Problema Persiste
-- **Comparte más detalles**:
-  - Las líneas 95-105 de `enhancedVideoCallManager.js` desde tu entorno de Render.
-  - El log completo del error de Vite durante la construcción.
-  - Los logs de la consola del cliente iniciador, cliente remoto, y servidor.
-- **Prueba alternativa**:
-  - Comenta temporalmente el método `_log` y usa un simple `console.log` para descartar problemas con la lógica de logging:
-    ```javascript
-    _log(message, level = 'info') {
-        if (this.debugMode) {
-            const timestamp = new Date().toISOString();
-            const role = this.isHost ? 'HOST' : 'GUEST';
-            console.log(`[${role} ${timestamp}] ${message}`);
-        }
-    }
-    ```
-  - Reconstruye y verifica si el error de sintaxis desaparece.
-- **Prueba localmente**: Si es posible, prueba el código en un entorno local (no en Render) para descartar problemas específicos del entorno.
-
-Con este código corregido, el error de sintaxis debería resolverse, y las notificaciones de escaneo deberían funcionar correctamente, asumiendo que el servidor está configurado para manejar `scan-notification`. ¡Reemplaza el archivo, reconstruye, y prueba! Si encuentras más errores o las notificaciones no aparecen, comparte los logs y lo resolveremos juntos.
