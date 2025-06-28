@@ -32,9 +32,13 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // Estados de animación de escaneo
+  // Estados de animación de escaneo (propios)
   const [faceScanning, setFaceScanning] = useState(false);
   const [handScanning, setHandScanning] = useState(false);
+
+  // 🔧 NUEVO: Estados de animación de escaneo recibido (sobre video local)
+  const [receivingFaceScan, setReceivingFaceScan] = useState(false);
+  const [receivingHandScan, setReceivingHandScan] = useState(false);
 
   // Estado para controlar visibilidad del video local
   const [showLocalVideo, setShowLocalVideo] = useState(true);
@@ -195,13 +199,31 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setConnectionState('error');
   }, []);
 
-  // 🔧 FIXED: Callback para manejar notificaciones de escaneo con mejor logging
+  // 🔧 ENHANCED: Callback para manejar notificaciones de escaneo con animación local
   const handleScanNotification = useCallback((notification: any) => {
     console.log('📢 SCAN: Notification received:', notification);
     
     if (notification && notification.type && notification.message) {
       console.log(`📢 SCAN: Processing ${notification.type} from ${notification.fromName || 'unknown'}`);
       
+      // 🔧 NUEVO: Activar animación sobre video local según el tipo de escaneo
+      if (notification.type === 'face_scan') {
+        console.log('🎭 NUEVO: Activating face scan animation on local video');
+        setReceivingFaceScan(true);
+        setTimeout(() => {
+          setReceivingFaceScan(false);
+          console.log('🎭 NUEVO: Face scan animation on local video completed');
+        }, notification.duration || 5000);
+      } else if (notification.type === 'hand_scan') {
+        console.log('👋 NUEVO: Activating hand scan animation on local video');
+        setReceivingHandScan(true);
+        setTimeout(() => {
+          setReceivingHandScan(false);
+          console.log('👋 NUEVO: Hand scan animation on local video completed');
+        }, notification.duration || 5000);
+      }
+      
+      // Mantener la notificación existente
       setReceivedNotification({
         type: notification.type,
         message: notification.message,
@@ -604,7 +626,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         />
         
         {showLocalVideo && (
-          <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30">
+          <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30 relative">
             <video
               ref={localVideoRef}
               autoPlay
@@ -625,6 +647,61 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             {!isVideoEnabled && (
               <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
                 <VideoOff className="h-8 w-8 text-gray-400" />
+              </div>
+            )}
+
+            {/* 🔧 NUEVO: Animaciones de escaneo sobre video local cuando se recibe escaneo */}
+            {receivingFaceScan && (
+              <div className="absolute inset-0 pointer-events-none z-40">
+                <div className="relative w-full h-full">
+                  {/* Barra de escaneo facial que baja */}
+                  <div 
+                    className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                    style={{
+                      animation: 'localFaceScan 3s ease-in-out infinite',
+                      boxShadow: '0 0 15px rgba(34, 197, 94, 0.8)'
+                    }}
+                  />
+                  {/* Overlay de escaneo */}
+                  <div className="absolute inset-0 bg-green-400 bg-opacity-20 border-2 border-green-400 border-dashed animate-pulse" />
+                  {/* Esquinas de escaneo */}
+                  <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
+                  <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
+                  <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
+                  <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
+                  {/* Texto de escaneo */}
+                  <div className="absolute top-1 left-1 bg-green-600 bg-opacity-90 text-white px-2 py-1 rounded text-xs font-medium">
+                    🔍 Siendo Escaneado
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {receivingHandScan && (
+              <div className="absolute inset-0 pointer-events-none z-40">
+                <div className="relative w-full h-full">
+                  {/* Círculo pulsante para huella */}
+                  <div 
+                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 border-2 border-blue-400 rounded-full"
+                    style={{
+                      animation: 'localHandScan 3s ease-in-out infinite',
+                      boxShadow: '0 0 20px rgba(59, 130, 246, 0.8)'
+                    }}
+                  />
+                  {/* Líneas de escaneo */}
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                    <div className="w-0.5 h-12 bg-blue-400 absolute -top-6 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                    <div className="w-0.5 h-12 bg-blue-400 absolute -bottom-6 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                    <div className="h-0.5 w-12 bg-blue-400 absolute -left-6 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                    <div className="h-0.5 w-12 bg-blue-400 absolute -right-6 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                  </div>
+                  {/* Overlay de escaneo */}
+                  <div className="absolute inset-0 bg-blue-400 bg-opacity-20 animate-pulse" />
+                  {/* Texto de escaneo */}
+                  <div className="absolute top-1 left-1 bg-blue-600 bg-opacity-90 text-white px-2 py-1 rounded text-xs font-medium">
+                    👋 Siendo Escaneado
+                  </div>
+                </div>
               </div>
             )}
             
@@ -666,7 +743,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           </div>
         )}
         
-        {/* Animaciones de escaneo */}
+        {/* Animaciones de escaneo sobre video remoto (cuando YO escaneo) */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
@@ -804,6 +881,8 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
               <p>🔧 Local Video Visible: {showLocalVideo ? '✅' : '❌'}</p>
               <p>📢 Scan Callback: {debugInfo.scanNotificationCallback ? '✅' : '❌'}</p>
               <p>📢 Notification: {receivedNotification ? `${receivedNotification.type} from ${receivedNotification.fromName}` : 'None'}</p>
+              <p>🎭 Receiving Face Scan: {receivingFaceScan ? '✅' : '❌'}</p>
+              <p>👋 Receiving Hand Scan: {receivingHandScan ? '✅' : '❌'}</p>
               {debugInfo.diagnostics && (
                 <div className="mt-2 pt-2 border-t border-gray-600">
                   <p className="font-semibold">Diagnostics:</p>
@@ -966,7 +1045,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             </div>
           )}
 
-          {receivedNotification && (
+          {(receivingFaceScan || receivingHandScan || receivedNotification) && (
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
               <span>Siendo Escaneado</span>
@@ -986,6 +1065,18 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
           50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
           100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+        }
+        
+        @keyframes localFaceScan {
+          0% { top: 0; opacity: 1; }
+          50% { top: 50%; opacity: 0.8; }
+          100% { top: 100%; opacity: 0; }
+        }
+        
+        @keyframes localHandScan {
+          0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+          50% { transform: translate(-50%, -50%) scale(1.0); opacity: 0.6; }
+          100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
         }
         
         @keyframes progressBar {
