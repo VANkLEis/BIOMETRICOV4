@@ -12,6 +12,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const enhancedManagerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Estados principales
   const [connectionState, setConnectionState] = useState<string>('idle');
@@ -44,6 +45,11 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [showLocalVideo, setShowLocalVideo] = useState(true);
   const [forceLocalVideoVisible, setForceLocalVideoVisible] = useState(false);
 
+  // 🔧 NUEVO: Estados para resolución responsiva
+  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16/9);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // 🔧 FIXED: Estado para notificaciones recibidas con mejor tipado
   const [receivedNotification, setReceivedNotification] = useState<{
     type: string;
@@ -51,6 +57,111 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     timestamp: number;
     fromName?: string;
   } | null>(null);
+
+  // 🔧 NUEVO: Hook para detectar cambios de tamaño del contenedor
+  useEffect(() => {
+    const updateContainerDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerDimensions({
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    };
+
+    // Actualizar dimensiones iniciales
+    updateContainerDimensions();
+
+    // Escuchar cambios de tamaño
+    const resizeObserver = new ResizeObserver(updateContainerDimensions);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    // Escuchar cambios de orientación en móviles
+    window.addEventListener('orientationchange', updateContainerDimensions);
+    window.addEventListener('resize', updateContainerDimensions);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('orientationchange', updateContainerDimensions);
+      window.removeEventListener('resize', updateContainerDimensions);
+    };
+  }, []);
+
+  // 🔧 NUEVO: Calcular dimensiones óptimas del video
+  const calculateOptimalVideoDimensions = useCallback(() => {
+    const { width: containerWidth, height: containerHeight } = containerDimensions;
+    
+    if (containerWidth === 0 || containerHeight === 0) {
+      return { width: '100%', height: '100%', objectFit: 'cover' as const };
+    }
+
+    // Reservar espacio para controles (120px en la parte inferior)
+    const availableHeight = containerHeight - 120;
+    const availableWidth = containerWidth;
+
+    // Calcular dimensiones basadas en aspect ratio
+    const containerAspectRatio = availableWidth / availableHeight;
+    
+    let videoWidth, videoHeight, objectFit: 'cover' | 'contain' = 'contain';
+
+    if (videoAspectRatio > containerAspectRatio) {
+      // Video es más ancho que el contenedor
+      videoWidth = availableWidth;
+      videoHeight = availableWidth / videoAspectRatio;
+      
+      // Si la altura calculada es mayor que la disponible, usar contain
+      if (videoHeight > availableHeight) {
+        videoHeight = availableHeight;
+        videoWidth = availableHeight * videoAspectRatio;
+        objectFit = 'contain';
+      }
+    } else {
+      // Video es más alto que el contenedor
+      videoHeight = availableHeight;
+      videoWidth = availableHeight * videoAspectRatio;
+      
+      // Si el ancho calculado es mayor que el disponible, usar contain
+      if (videoWidth > availableWidth) {
+        videoWidth = availableWidth;
+        videoHeight = availableWidth / videoAspectRatio;
+        objectFit = 'contain';
+      }
+    }
+
+    return {
+      width: `${Math.min(videoWidth, availableWidth)}px`,
+      height: `${Math.min(videoHeight, availableHeight)}px`,
+      objectFit
+    };
+  }, [containerDimensions, videoAspectRatio]);
+
+  // 🔧 NUEVO: Detectar aspect ratio del video remoto
+  const handleRemoteVideoMetadata = useCallback(() => {
+    if (remoteVideoRef.current) {
+      const video = remoteVideoRef.current;
+      if (video.videoWidth && video.videoHeight) {
+        const aspectRatio = video.videoWidth / video.videoHeight;
+        setVideoAspectRatio(aspectRatio);
+        console.log(`📐 Remote video aspect ratio detected: ${aspectRatio.toFixed(2)} (${video.videoWidth}x${video.videoHeight})`);
+      }
+    }
+  }, []);
+
+  // 🔧 NUEVO: Toggle fullscreen
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(console.error);
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch(console.error);
+    }
+  }, []);
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -166,6 +277,9 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
       console.log("🖼️ Assigning remote stream to video element");
       remoteVideoRef.current.srcObject = stream;
       
+      // 🔧 NUEVO: Configurar event listener para metadata
+      remoteVideoRef.current.onloadedmetadata = handleRemoteVideoMetadata;
+      
       remoteVideoRef.current.play().then(() => {
         console.log("✅ Remote video is now playing with audio");
       }).catch(error => {
@@ -174,7 +288,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     } else if (!stream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
-  }, []);
+  }, [handleRemoteVideoMetadata]);
 
   // Callback para cambios de estado
   const handleStateChange = useCallback((newState: string, oldState: string, data: any) => {
@@ -458,6 +572,9 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setShowLocalVideo(!showLocalVideo);
   };
 
+  // 🔧 NUEVO: Calcular dimensiones del video
+  const videoDimensions = calculateOptimalVideoDimensions();
+
   // Pantalla de conexión
   if (['idle', 'connecting_signaling', 'signaling_connected', 'joining_room'].includes(connectionState)) {
     return (
@@ -612,21 +729,65 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
 
   // Interfaz principal - Video remoto + video local en picture-in-picture
   return (
-    <div className="flex flex-col h-full bg-gray-900 relative">
-      {/* Video Container - Remoto como fondo */}
-      <div className="flex-1 relative">
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="w-full h-full object-cover bg-gray-800"
-          onLoadedMetadata={() => console.log("✅ Remote video metadata loaded")}
-          onPlay={() => console.log("✅ Remote video started playing")}
-          onError={(e) => console.error("❌ Remote video error:", e)}
-        />
+    <div ref={containerRef} className="flex flex-col h-full bg-gray-900 relative overflow-hidden">
+      {/* 🔧 NUEVO: Contenedor de video responsivo */}
+      <div className="flex-1 relative flex items-center justify-center" style={{ minHeight: 0 }}>
+        {/* 🔧 NUEVO: Video remoto con dimensiones calculadas */}
+        <div 
+          className="relative bg-gray-800 rounded-lg overflow-hidden"
+          style={{
+            width: videoDimensions.width,
+            height: videoDimensions.height,
+            maxWidth: '100%',
+            maxHeight: '100%'
+          }}
+        >
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full"
+            style={{ objectFit: videoDimensions.objectFit }}
+            onLoadedMetadata={() => console.log("✅ Remote video metadata loaded")}
+            onPlay={() => console.log("✅ Remote video started playing")}
+            onError={(e) => console.error("❌ Remote video error:", e)}
+          />
+
+          {/* 🔧 NUEVO: Indicador de resolución */}
+          <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+            {containerDimensions.width}x{containerDimensions.height}
+            {remoteVideoRef.current?.videoWidth && (
+              <span className="ml-1">
+                ({remoteVideoRef.current.videoWidth}x{remoteVideoRef.current.videoHeight})
+              </span>
+            )}
+          </div>
+
+          {/* 🔧 NUEVO: Botón de pantalla completa */}
+          <button
+            onClick={toggleFullscreen}
+            className="absolute top-2 right-2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded transition-all"
+            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+          >
+            {isFullscreen ? (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M3 3h4v2H5v2H3V3zm10 0h4v4h-2V5h-2V3zM3 13v4h4v-2H5v-2H3zm14 0v2h-2v2h-4v-2h2v-2h4z"/>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M3 3v4h2V5h2V3H3zm12 0v2h2v2h2V3h-4zM5 15H3v4h4v-2H5v-2zm10 0v2h2v2h4v-4h-4z"/>
+              </svg>
+            )}
+          </button>
+        </div>
         
+        {/* Video local (picture-in-picture) con posición responsiva */}
         {showLocalVideo && (
-          <div className="absolute top-4 right-4 w-64 h-48 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30 relative">
+          <div className={`absolute ${
+            containerDimensions.width < 768 
+              ? 'top-2 right-2 w-24 h-18' 
+              : 'top-4 right-4 w-64 h-48'
+          } bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30 relative`}>
             <video
               ref={localVideoRef}
               autoPlay
@@ -646,7 +807,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             
             {!isVideoEnabled && (
               <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
-                <VideoOff className="h-8 w-8 text-gray-400" />
+                <VideoOff className={`${containerDimensions.width < 768 ? 'h-4 w-4' : 'h-8 w-8'} text-gray-400`} />
               </div>
             )}
 
@@ -747,20 +908,14 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-green-400 animate-pulse">
-                <div 
-                  className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
-                  style={{
-                    animation: 'faceScan 3s ease-in-out',
-                    boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
-                  }}
-                />
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
-              </div>
-              <div className="absolute inset-x-0 top-16 bottom-28 bg-green-400 bg-opacity-10" />
+              <div 
+                className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                style={{
+                  animation: 'faceScan 3s ease-in-out',
+                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
+                }}
+              />
+              <div className="absolute inset-0 bg-green-400 bg-opacity-10 border-2 border-green-400 border-dashed animate-pulse" />
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
                 🔍 Escaneando Rostro...
               </div>
@@ -780,23 +935,21 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         {handScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-blue-400 animate-pulse">
-                <div 
-                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
-                  style={{
-                    animation: 'handScan 3s ease-in-out infinite',
-                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)',
-                    marginTop: '-20px'
-                  }}
-                />
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" style={{ marginTop: '-20px' }}>
-                  <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                  <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                  <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-                  <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-                </div>
+              <div 
+                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
+                style={{
+                  animation: 'handScan 3s ease-in-out infinite',
+                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)',
+                  marginTop: '-20px'
+                }}
+              />
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" style={{ marginTop: '-20px' }}>
+                <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
               </div>
-              <div className="absolute inset-x-0 top-16 bottom-28 bg-blue-400 bg-opacity-10" />
+              <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
                 👋 Escaneando Mano...
               </div>
@@ -883,6 +1036,10 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
               <p>📢 Notification: {receivedNotification ? `${receivedNotification.type} from ${receivedNotification.fromName}` : 'None'}</p>
               <p>🎭 Receiving Face Scan: {receivingFaceScan ? '✅' : '❌'}</p>
               <p>👋 Receiving Hand Scan: {receivingHandScan ? '✅' : '❌'}</p>
+              <p>📐 Container: {containerDimensions.width}x{containerDimensions.height}</p>
+              <p>📐 Video Aspect: {videoAspectRatio.toFixed(2)}</p>
+              <p>📐 Video Size: {videoDimensions.width} x {videoDimensions.height}</p>
+              <p>🖥️ Fullscreen: {isFullscreen ? '✅' : '❌'}</p>
               {debugInfo.diagnostics && (
                 <div className="mt-2 pt-2 border-t border-gray-600">
                   <p className="font-semibold">Diagnostics:</p>
