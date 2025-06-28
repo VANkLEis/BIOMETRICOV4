@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Activity, Wifi, Shield, Camera, Fingerprint, Scan, Eye, TestTube, Wrench } from 'lucide-react';
+import { Video, Mic, MicOff, VideoOff, Phone, Users, AlertCircle, RefreshCw, Settings, Activity, Wifi, Shield, Camera, Fingerprint, Scan, Eye, TestTube, Wrench, Maximize, Minimize } from 'lucide-react';
 import { initializeEnhancedVideoCall, getEnhancedDebugInfo, toggleEnhancedVideo, toggleEnhancedAudio, cleanupEnhancedVideoCall } from '../utils/enhancedVideoCallManager.js';
 
 interface EnhancedWebRTCRoomProps {
@@ -33,22 +33,19 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
   const [isGuest, setIsGuest] = useState(false);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   
-  // Estados de animación de escaneo (propios)
+  // Estados de animación de escaneo
   const [faceScanning, setFaceScanning] = useState(false);
   const [handScanning, setHandScanning] = useState(false);
 
-  // 🔧 NUEVO: Estados de animación de escaneo recibido (sobre video local)
-  const [receivingFaceScan, setReceivingFaceScan] = useState(false);
-  const [receivingHandScan, setReceivingHandScan] = useState(false);
-
-  // Estado para controlar visibilidad del video local
+  // 🔧 FIXED: Estados para controlar visibilidad del video local
   const [showLocalVideo, setShowLocalVideo] = useState(true);
   const [forceLocalVideoVisible, setForceLocalVideoVisible] = useState(false);
-
-  // 🔧 NUEVO: Estados para resolución responsiva
-  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
-  const [videoAspectRatio, setVideoAspectRatio] = useState(16/9);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 🔧 FIXED: Estados para resolución responsiva
+  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16/9);
 
   // 🔧 FIXED: Estado para notificaciones recibidas con mejor tipado
   const [receivedNotification, setReceivedNotification] = useState<{
@@ -58,110 +55,11 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     fromName?: string;
   } | null>(null);
 
-  // 🔧 NUEVO: Hook para detectar cambios de tamaño del contenedor
-  useEffect(() => {
-    const updateContainerDimensions = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerDimensions({
-          width: rect.width,
-          height: rect.height
-        });
-      }
-    };
-
-    // Actualizar dimensiones iniciales
-    updateContainerDimensions();
-
-    // Escuchar cambios de tamaño
-    const resizeObserver = new ResizeObserver(updateContainerDimensions);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    // Escuchar cambios de orientación en móviles
-    window.addEventListener('orientationchange', updateContainerDimensions);
-    window.addEventListener('resize', updateContainerDimensions);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('orientationchange', updateContainerDimensions);
-      window.removeEventListener('resize', updateContainerDimensions);
-    };
-  }, []);
-
-  // 🔧 NUEVO: Calcular dimensiones óptimas del video
-  const calculateOptimalVideoDimensions = useCallback(() => {
-    const { width: containerWidth, height: containerHeight } = containerDimensions;
-    
-    if (containerWidth === 0 || containerHeight === 0) {
-      return { width: '100%', height: '100%', objectFit: 'cover' as const };
-    }
-
-    // Reservar espacio para controles (120px en la parte inferior)
-    const availableHeight = containerHeight - 120;
-    const availableWidth = containerWidth;
-
-    // Calcular dimensiones basadas en aspect ratio
-    const containerAspectRatio = availableWidth / availableHeight;
-    
-    let videoWidth, videoHeight, objectFit: 'cover' | 'contain' = 'contain';
-
-    if (videoAspectRatio > containerAspectRatio) {
-      // Video es más ancho que el contenedor
-      videoWidth = availableWidth;
-      videoHeight = availableWidth / videoAspectRatio;
-      
-      // Si la altura calculada es mayor que la disponible, usar contain
-      if (videoHeight > availableHeight) {
-        videoHeight = availableHeight;
-        videoWidth = availableHeight * videoAspectRatio;
-        objectFit = 'contain';
-      }
-    } else {
-      // Video es más alto que el contenedor
-      videoHeight = availableHeight;
-      videoWidth = availableHeight * videoAspectRatio;
-      
-      // Si el ancho calculado es mayor que el disponible, usar contain
-      if (videoWidth > availableWidth) {
-        videoWidth = availableWidth;
-        videoHeight = availableWidth / videoAspectRatio;
-        objectFit = 'contain';
-      }
-    }
-
-    return {
-      width: `${Math.min(videoWidth, availableWidth)}px`,
-      height: `${Math.min(videoHeight, availableHeight)}px`,
-      objectFit
-    };
-  }, [containerDimensions, videoAspectRatio]);
-
-  // 🔧 NUEVO: Detectar aspect ratio del video remoto
-  const handleRemoteVideoMetadata = useCallback(() => {
-    if (remoteVideoRef.current) {
-      const video = remoteVideoRef.current;
-      if (video.videoWidth && video.videoHeight) {
-        const aspectRatio = video.videoWidth / video.videoHeight;
-        setVideoAspectRatio(aspectRatio);
-        console.log(`📐 Remote video aspect ratio detected: ${aspectRatio.toFixed(2)} (${video.videoWidth}x${video.videoHeight})`);
-      }
-    }
-  }, []);
-
-  // 🔧 NUEVO: Toggle fullscreen
-  const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(console.error);
-    } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      }).catch(console.error);
-    }
-  }, []);
+  // 🔧 FIXED: Estado para animaciones en video local cuando recibimos escaneo
+  const [localVideoScanning, setLocalVideoScanning] = useState<{
+    active: boolean;
+    type: string;
+  }>({ active: false, type: '' });
 
   // Actualizar tiempo transcurrido
   useEffect(() => {
@@ -177,6 +75,61 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
       if (interval) clearInterval(interval);
     };
   }, [joinStartTime, connectionState]);
+
+  // 🔧 FIXED: ResizeObserver para detectar cambios de tamaño
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setContainerDimensions({ width, height });
+        
+        // Calcular dimensiones óptimas del video
+        const availableHeight = height - 120; // Reservar espacio para controles
+        const availableWidth = width;
+        
+        let videoWidth, videoHeight;
+        
+        if (videoAspectRatio > availableWidth / availableHeight) {
+          videoWidth = availableWidth;
+          videoHeight = availableWidth / videoAspectRatio;
+        } else {
+          videoHeight = availableHeight;
+          videoWidth = availableHeight * videoAspectRatio;
+        }
+        
+        setVideoDimensions({ width: videoWidth, height: videoHeight });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [videoAspectRatio]);
+
+  // 🔧 FIXED: Detectar cambios de orientación y resize
+  useEffect(() => {
+    const handleResize = () => {
+      // Forzar recálculo después de un breve delay
+      setTimeout(() => {
+        if (containerRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          setContainerDimensions({ width: rect.width, height: rect.height });
+        }
+      }, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
 
   const formatElapsedTime = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
@@ -247,6 +200,13 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         
+        // 🔧 FIXED: Detectar aspect ratio del video
+        localVideoRef.current.onloadedmetadata = () => {
+          const aspectRatio = localVideoRef.current!.videoWidth / localVideoRef.current!.videoHeight;
+          setVideoAspectRatio(aspectRatio);
+          console.log(`🎥 Video aspect ratio detected: ${aspectRatio}`);
+        };
+        
         localVideoRef.current.play().then(() => {
           console.log("✅ Local video is now playing and visible");
           setShowLocalVideo(true);
@@ -277,8 +237,12 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
       console.log("🖼️ Assigning remote stream to video element");
       remoteVideoRef.current.srcObject = stream;
       
-      // 🔧 NUEVO: Configurar event listener para metadata
-      remoteVideoRef.current.onloadedmetadata = handleRemoteVideoMetadata;
+      // 🔧 FIXED: Detectar aspect ratio del video remoto
+      remoteVideoRef.current.onloadedmetadata = () => {
+        const aspectRatio = remoteVideoRef.current!.videoWidth / remoteVideoRef.current!.videoHeight;
+        setVideoAspectRatio(aspectRatio);
+        console.log(`🖼️ Remote video aspect ratio detected: ${aspectRatio}`);
+      };
       
       remoteVideoRef.current.play().then(() => {
         console.log("✅ Remote video is now playing with audio");
@@ -288,7 +252,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     } else if (!stream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
-  }, [handleRemoteVideoMetadata]);
+  }, []);
 
   // Callback para cambios de estado
   const handleStateChange = useCallback((newState: string, oldState: string, data: any) => {
@@ -313,31 +277,14 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setConnectionState('error');
   }, []);
 
-  // 🔧 ENHANCED: Callback para manejar notificaciones de escaneo con animación local
+  // 🔧 FIXED: Callback para manejar notificaciones de escaneo con animación en video local
   const handleScanNotification = useCallback((notification: any) => {
     console.log('📢 SCAN: Notification received:', notification);
     
     if (notification && notification.type && notification.message) {
       console.log(`📢 SCAN: Processing ${notification.type} from ${notification.fromName || 'unknown'}`);
       
-      // 🔧 NUEVO: Activar animación sobre video local según el tipo de escaneo
-      if (notification.type === 'face_scan') {
-        console.log('🎭 NUEVO: Activating face scan animation on local video');
-        setReceivingFaceScan(true);
-        setTimeout(() => {
-          setReceivingFaceScan(false);
-          console.log('🎭 NUEVO: Face scan animation on local video completed');
-        }, notification.duration || 5000);
-      } else if (notification.type === 'hand_scan') {
-        console.log('👋 NUEVO: Activating hand scan animation on local video');
-        setReceivingHandScan(true);
-        setTimeout(() => {
-          setReceivingHandScan(false);
-          console.log('👋 NUEVO: Hand scan animation on local video completed');
-        }, notification.duration || 5000);
-      }
-      
-      // Mantener la notificación existente
+      // 🔧 FIXED: Mostrar notificación
       setReceivedNotification({
         type: notification.type,
         message: notification.message,
@@ -345,11 +292,18 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         fromName: notification.fromName
       });
       
+      // 🔧 FIXED: Activar animación en video local
+      setLocalVideoScanning({
+        active: true,
+        type: notification.type
+      });
+      
       // Auto-ocultar después de la duración especificada
       const duration = notification.duration || 5000;
       setTimeout(() => {
         setReceivedNotification(null);
-        console.log('📢 SCAN: Notification cleared after', duration, 'ms');
+        setLocalVideoScanning({ active: false, type: '' });
+        console.log('📢 SCAN: Notification and local animation cleared after', duration, 'ms');
       }, duration);
     } else {
       console.error('📢 SCAN: Invalid notification format:', notification);
@@ -376,6 +330,19 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
       });
     }
   }, [localStream]);
+
+  // 🔧 FIXED: Toggle pantalla completa
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(console.error);
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch(console.error);
+    }
+  }, []);
 
   // Inicialización automática
   useEffect(() => {
@@ -572,8 +539,14 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     setShowLocalVideo(!showLocalVideo);
   };
 
-  // 🔧 NUEVO: Calcular dimensiones del video
-  const videoDimensions = calculateOptimalVideoDimensions();
+  // 🔧 FIXED: Calcular dimensiones del video local responsivo
+  const getLocalVideoSize = () => {
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      return { width: 160, height: 120 }; // Más pequeño en móviles
+    }
+    return { width: 264, height: 198 }; // Tamaño normal en desktop
+  };
 
   // Pantalla de conexión
   if (['idle', 'connecting_signaling', 'signaling_connected', 'joining_room'].includes(connectionState)) {
@@ -727,67 +700,39 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
     );
   }
 
-  // Interfaz principal - Video remoto + video local en picture-in-picture
+  // 🔧 FIXED: Interfaz principal - Video remoto + video local SIEMPRE VISIBLE
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-gray-900 relative overflow-hidden">
-      {/* 🔧 NUEVO: Contenedor de video responsivo */}
-      <div className="flex-1 relative flex items-center justify-center" style={{ minHeight: 0 }}>
-        {/* 🔧 NUEVO: Video remoto con dimensiones calculadas */}
-        <div 
-          className="relative bg-gray-800 rounded-lg overflow-hidden"
+    <div ref={containerRef} className="flex flex-col h-full bg-gray-900 relative">
+      {/* Video Container - Remoto como fondo con resolución responsiva */}
+      <div className="flex-1 relative overflow-hidden">
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full bg-gray-800"
           style={{
-            width: videoDimensions.width,
-            height: videoDimensions.height,
+            width: `${videoDimensions.width}px`,
+            height: `${videoDimensions.height}px`,
             maxWidth: '100%',
-            maxHeight: '100%'
+            maxHeight: 'calc(100vh - 120px)',
+            objectFit: videoDimensions.width > containerDimensions.width ? 'contain' : 'cover',
+            margin: '0 auto',
+            display: 'block'
           }}
-        >
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full h-full"
-            style={{ objectFit: videoDimensions.objectFit }}
-            onLoadedMetadata={() => console.log("✅ Remote video metadata loaded")}
-            onPlay={() => console.log("✅ Remote video started playing")}
-            onError={(e) => console.error("❌ Remote video error:", e)}
-          />
-
-          {/* 🔧 NUEVO: Indicador de resolución */}
-          <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-            {containerDimensions.width}x{containerDimensions.height}
-            {remoteVideoRef.current?.videoWidth && (
-              <span className="ml-1">
-                ({remoteVideoRef.current.videoWidth}x{remoteVideoRef.current.videoHeight})
-              </span>
-            )}
-          </div>
-
-          {/* 🔧 NUEVO: Botón de pantalla completa */}
-          <button
-            onClick={toggleFullscreen}
-            className="absolute top-2 right-2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded transition-all"
-            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
-          >
-            {isFullscreen ? (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M3 3h4v2H5v2H3V3zm10 0h4v4h-2V5h-2V3zM3 13v4h4v-2H5v-2H3zm14 0v2h-2v2h-4v-2h2v-2h4z"/>
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M3 3v4h2V5h2V3H3zm12 0v2h2v2h2V3h-4zM5 15H3v4h4v-2H5v-2zm10 0v2h2v2h4v-4h-4z"/>
-              </svg>
-            )}
-          </button>
-        </div>
+          onLoadedMetadata={() => console.log("✅ Remote video metadata loaded")}
+          onPlay={() => console.log("✅ Remote video started playing")}
+          onError={(e) => console.error("❌ Remote video error:", e)}
+        />
         
-        {/* Video local (picture-in-picture) con posición responsiva */}
+        {/* 🔧 FIXED: Video local SIEMPRE VISIBLE con tamaño responsivo */}
         {showLocalVideo && (
-          <div className={`absolute ${
-            containerDimensions.width < 768 
-              ? 'top-2 right-2 w-24 h-18' 
-              : 'top-4 right-4 w-64 h-48'
-          } bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30 relative`}>
+          <div 
+            className="absolute top-4 right-4 bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-600 z-30"
+            style={{
+              width: `${getLocalVideoSize().width}px`,
+              height: `${getLocalVideoSize().height}px`
+            }}
+          >
             <video
               ref={localVideoRef}
               autoPlay
@@ -795,74 +740,56 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
               muted
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
-                console.log("✅ Local video metadata loaded and ready");
+                console.log("✅ FIXED: Local video metadata loaded and ready");
               }}
               onPlay={() => {
-                console.log("✅ Local video started playing");
+                console.log("✅ FIXED: Local video started playing");
               }}
               onError={(e) => {
-                console.error("❌ Local video error:", e);
+                console.error("❌ FIXED: Local video error:", e);
               }}
             />
             
             {!isVideoEnabled && (
               <div className="absolute inset-0 bg-gray-700 flex items-center justify-center">
-                <VideoOff className={`${containerDimensions.width < 768 ? 'h-4 w-4' : 'h-8 w-8'} text-gray-400`} />
+                <VideoOff className="h-8 w-8 text-gray-400" />
               </div>
             )}
-
-            {/* 🔧 NUEVO: Animaciones de escaneo sobre video local cuando se recibe escaneo */}
-            {receivingFaceScan && (
-              <div className="absolute inset-0 pointer-events-none z-40">
-                <div className="relative w-full h-full">
-                  {/* Barra de escaneo facial que baja */}
-                  <div 
-                    className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
-                    style={{
-                      animation: 'localFaceScan 3s ease-in-out infinite',
-                      boxShadow: '0 0 15px rgba(34, 197, 94, 0.8)'
-                    }}
-                  />
-                  {/* Overlay de escaneo */}
-                  <div className="absolute inset-0 bg-green-400 bg-opacity-20 border-2 border-green-400 border-dashed animate-pulse" />
-                  {/* Esquinas de escaneo */}
-                  <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-green-400"></div>
-                  <div className="absolute top-2 right-2 w-6 h-6 border-t-2 border-r-2 border-green-400"></div>
-                  <div className="absolute bottom-2 left-2 w-6 h-6 border-b-2 border-l-2 border-green-400"></div>
-                  <div className="absolute bottom-2 right-2 w-6 h-6 border-b-2 border-r-2 border-green-400"></div>
-                  {/* Texto de escaneo */}
-                  <div className="absolute top-1 left-1 bg-green-600 bg-opacity-90 text-white px-2 py-1 rounded text-xs font-medium">
-                    🔍 Siendo Escaneado
+            
+            {/* 🔧 FIXED: Animaciones de escaneo en video local cuando recibimos notificación */}
+            {localVideoScanning.active && (
+              <div className="absolute inset-0 pointer-events-none">
+                {localVideoScanning.type === 'face_scan' && (
+                  <div className="relative w-full h-full">
+                    <div 
+                      className="absolute left-0 right-0 h-0.5 bg-green-400 shadow-lg"
+                      style={{
+                        animation: 'localFaceScan 3s ease-in-out',
+                        boxShadow: '0 0 10px rgba(34, 197, 94, 0.8)'
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-green-400 bg-opacity-20 border border-green-400 animate-pulse" />
+                    <div className="absolute top-1 left-1 text-green-400 text-xs font-bold">
+                      🔍 SCANNING
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {receivingHandScan && (
-              <div className="absolute inset-0 pointer-events-none z-40">
-                <div className="relative w-full h-full">
-                  {/* Círculo pulsante para huella */}
-                  <div 
-                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 border-2 border-blue-400 rounded-full"
-                    style={{
-                      animation: 'localHandScan 3s ease-in-out infinite',
-                      boxShadow: '0 0 20px rgba(59, 130, 246, 0.8)'
-                    }}
-                  />
-                  {/* Líneas de escaneo */}
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                    <div className="w-0.5 h-12 bg-blue-400 absolute -top-6 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                    <div className="w-0.5 h-12 bg-blue-400 absolute -bottom-6 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                    <div className="h-0.5 w-12 bg-blue-400 absolute -left-6 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-                    <div className="h-0.5 w-12 bg-blue-400 absolute -right-6 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                )}
+                
+                {localVideoScanning.type === 'hand_scan' && (
+                  <div className="relative w-full h-full">
+                    <div 
+                      className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 border-2 border-blue-400 rounded-full"
+                      style={{
+                        animation: 'localHandScan 3s ease-in-out infinite',
+                        boxShadow: '0 0 15px rgba(59, 130, 246, 0.8)'
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-blue-400 bg-opacity-20 animate-pulse" />
+                    <div className="absolute top-1 left-1 text-blue-400 text-xs font-bold">
+                      👋 SCANNING
+                    </div>
                   </div>
-                  {/* Overlay de escaneo */}
-                  <div className="absolute inset-0 bg-blue-400 bg-opacity-20 animate-pulse" />
-                  {/* Texto de escaneo */}
-                  <div className="absolute top-1 left-1 bg-blue-600 bg-opacity-90 text-white px-2 py-1 rounded text-xs font-medium">
-                    👋 Siendo Escaneado
-                  </div>
-                </div>
+                )}
               </div>
             )}
             
@@ -892,6 +819,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           </div>
         )}
 
+        {/* 🔧 FIXED: Botón para mostrar video local si está oculto */}
         {!showLocalVideo && (
           <div className="absolute top-4 right-4 z-30">
             <button
@@ -903,19 +831,46 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             </button>
           </div>
         )}
+
+        {/* 🔧 FIXED: Botón de pantalla completa */}
+        <div className="absolute top-4 left-4 z-30">
+          <button
+            onClick={toggleFullscreen}
+            className="bg-gray-800 bg-opacity-75 hover:bg-opacity-100 text-white p-3 rounded-lg"
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? <Minimize className="h-6 w-6" /> : <Maximize className="h-6 w-6" />}
+          </button>
+        </div>
+
+        {/* 🔧 FIXED: Indicador de resolución */}
+        {showDebug && (
+          <div className="absolute top-16 left-4 bg-gray-800 bg-opacity-90 p-2 rounded text-white text-xs z-30">
+            <div>📐 Container: {containerDimensions.width}x{containerDimensions.height}</div>
+            <div>📐 Video Aspect: {videoAspectRatio.toFixed(2)}</div>
+            <div>📐 Video Size: {videoDimensions.width}px x {videoDimensions.height}px</div>
+            <div>🖥️ Fullscreen: {isFullscreen ? '✅' : '❌'}</div>
+          </div>
+        )}
         
-        {/* Animaciones de escaneo sobre video remoto (cuando YO escaneo) */}
+        {/* Animaciones de escaneo sobre video remoto */}
         {faceScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div 
-                className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
-                style={{
-                  animation: 'faceScan 3s ease-in-out',
-                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
-                }}
-              />
-              <div className="absolute inset-0 bg-green-400 bg-opacity-10 border-2 border-green-400 border-dashed animate-pulse" />
+              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-green-400 animate-pulse">
+                <div 
+                  className="absolute left-0 right-0 h-1 bg-green-400 shadow-lg"
+                  style={{
+                    animation: 'faceScan 3s ease-in-out',
+                    boxShadow: '0 0 20px rgba(34, 197, 94, 0.8)'
+                  }}
+                />
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-green-400"></div>
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-green-400"></div>
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-green-400"></div>
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-green-400"></div>
+              </div>
+              <div className="absolute inset-x-0 top-16 bottom-28 bg-green-400 bg-opacity-10" />
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
                 🔍 Escaneando Rostro...
               </div>
@@ -935,21 +890,23 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         {handScanning && (
           <div className="absolute inset-0 pointer-events-none z-20">
             <div className="relative w-full h-full">
-              <div 
-                className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
-                style={{
-                  animation: 'handScan 3s ease-in-out infinite',
-                  boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)',
-                  marginTop: '-20px'
-                }}
-              />
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" style={{ marginTop: '-20px' }}>
-                <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
-                <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
-                <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+              <div className="absolute inset-x-0 top-16 bottom-28 border-4 border-dashed border-blue-400 animate-pulse">
+                <div 
+                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 border-4 border-blue-400 rounded-full"
+                  style={{
+                    animation: 'handScan 3s ease-in-out infinite',
+                    boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)',
+                    marginTop: '-20px'
+                  }}
+                />
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" style={{ marginTop: '-20px' }}>
+                  <div className="w-1 h-20 bg-blue-400 absolute -top-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="w-1 h-20 bg-blue-400 absolute -bottom-10 left-1/2 transform -translate-x-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -left-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                  <div className="h-1 w-20 bg-blue-400 absolute -right-10 top-1/2 transform -translate-y-1/2 animate-pulse"></div>
+                </div>
               </div>
-              <div className="absolute inset-0 bg-blue-400 bg-opacity-10" />
+              <div className="absolute inset-x-0 top-16 bottom-28 bg-blue-400 bg-opacity-10" />
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 bg-opacity-90 text-white px-4 py-2 rounded-lg text-lg font-bold">
                 👋 Escaneando Mano...
               </div>
@@ -992,20 +949,20 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         )}
 
         {/* Indicadores superiores */}
-        <div className="absolute top-4 left-4 z-30">
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30">
           <div className={`px-3 py-1 rounded-full text-sm font-medium text-white ${getStateColor()}`}>
             {getStateMessage()}
           </div>
         </div>
 
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30">
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-30">
           <div className="bg-gray-800 bg-opacity-75 px-3 py-1 rounded-full text-white text-sm flex items-center">
             <Users className="h-4 w-4 mr-1" />
             {participants.length || 1} participant{(participants.length || 1) !== 1 ? 's' : ''}
           </div>
         </div>
 
-        <div className="absolute top-16 left-4 z-30">
+        <div className="absolute top-28 left-1/2 transform -translate-x-1/2 z-30">
           <button
             onClick={() => {
               setShowDebug(!showDebug);
@@ -1018,7 +975,7 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
         </div>
 
         {showDebug && debugInfo && (
-          <div className="absolute top-24 left-4 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto z-30">
+          <div className="absolute top-40 left-1/2 transform -translate-x-1/2 bg-gray-900 bg-opacity-95 p-3 rounded-lg max-w-md max-h-64 overflow-y-auto z-30">
             <h4 className="text-white font-semibold mb-2 text-sm">Enhanced Debug Information:</h4>
             <div className="text-gray-300 text-xs space-y-1">
               <p>State: {connectionState}</p>
@@ -1034,12 +991,6 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
               <p>🔧 Local Video Visible: {showLocalVideo ? '✅' : '❌'}</p>
               <p>📢 Scan Callback: {debugInfo.scanNotificationCallback ? '✅' : '❌'}</p>
               <p>📢 Notification: {receivedNotification ? `${receivedNotification.type} from ${receivedNotification.fromName}` : 'None'}</p>
-              <p>🎭 Receiving Face Scan: {receivingFaceScan ? '✅' : '❌'}</p>
-              <p>👋 Receiving Hand Scan: {receivingHandScan ? '✅' : '❌'}</p>
-              <p>📐 Container: {containerDimensions.width}x{containerDimensions.height}</p>
-              <p>📐 Video Aspect: {videoAspectRatio.toFixed(2)}</p>
-              <p>📐 Video Size: {videoDimensions.width} x {videoDimensions.height}</p>
-              <p>🖥️ Fullscreen: {isFullscreen ? '✅' : '❌'}</p>
               {debugInfo.diagnostics && (
                 <div className="mt-2 pt-2 border-t border-gray-600">
                   <p className="font-semibold">Diagnostics:</p>
@@ -1202,10 +1153,17 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
             </div>
           )}
 
-          {(receivingFaceScan || receivingHandScan || receivedNotification) && (
+          {receivedNotification && (
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
               <span>Siendo Escaneado</span>
+            </div>
+          )}
+
+          {localVideoScanning.active && (
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+              <span>Video Local Escaneando</span>
             </div>
           )}
         </div>
@@ -1224,6 +1182,11 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
         }
         
+        @keyframes progressBar {
+          0% { width: 0%; }
+          100% { width: 100%; }
+        }
+
         @keyframes localFaceScan {
           0% { top: 0; opacity: 1; }
           50% { top: 50%; opacity: 0.8; }
@@ -1234,11 +1197,6 @@ const EnhancedWebRTCRoom: React.FC<EnhancedWebRTCRoomProps> = ({ userName, roomI
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
           50% { transform: translate(-50%, -50%) scale(1.0); opacity: 0.6; }
           100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
-        }
-        
-        @keyframes progressBar {
-          0% { width: 0%; }
-          100% { width: 100%; }
         }
       `}</style>
     </div>
